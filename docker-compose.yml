@@ -1,0 +1,32 @@
+services:
+  db:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_USER: petaid
+      POSTGRES_PASSWORD: petaid
+      POSTGRES_DB: petaid
+    ports:
+      - "5432:5432"
+    volumes:
+      - petaid_pg:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U petaid"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+  api:
+    build: .
+    environment:
+      DATABASE_URL: postgresql+asyncpg://petaid:petaid@db:5432/petaid
+      JWT_SECRET: dev-only-secret-change-me
+      CORS_ORIGINS: http://localhost:3000
+      ENVIRONMENT: development
+    ports:
+      - "8000:8000"
+    depends_on:
+      db:
+        condition: service_healthy
+
+volumes:
+  petaid_pg:
