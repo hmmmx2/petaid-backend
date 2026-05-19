@@ -1,7 +1,16 @@
-import uuid
-from datetime import datetime
+"""Chat and ChatMessage entities (SRS 3.3.17).
 
-from sqlalchemy import Boolean, DateTime, ForeignKey, String, Text
+Real-time follow-up channel between a :class:`PetOwner` (initiator) and a
+:class:`VeterinaryExpert` (joiner). Manages its own status lifecycle
+(Initiated → Active → Closed) and emits Observer events on transition.
+"""
+from __future__ import annotations
+
+import enum
+import uuid
+from datetime import datetime, timezone
+
+from sqlalchemy import DateTime, Enum, ForeignKey, String, Text
 from sqlalchemy.dialects.postgresql import UUID
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
@@ -9,37 +18,86 @@ from app.core.database import Base
 from app.models.mixins import TimestampMixin, UUIDPkMixin
 
 
-class ChatThread(UUIDPkMixin, TimestampMixin, Base):
-    __tablename__ = "chat_threads"
+class ChatStatus(str, enum.Enum):
+    INITIATED = "initiated"
+    ACTIVE = "active"
+    CLOSED = "closed"
 
-    user_id: Mapped[uuid.UUID] = mapped_column(
-        UUID(as_uuid=True), ForeignKey("users.id", ondelete="CASCADE"), index=True, nullable=False
+
+class Chat(UUIDPkMixin, TimestampMixin, Base):
+    """A chat session between one Pet Owner and one Veterinary Expert."""
+
+    __tablename__ = "chats"
+
+    pet_owner_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True),
+        ForeignKey("accounts.id", ondelete="CASCADE"),
+        index=True,
+        nullable=False,
     )
-    counterpart_name: Mapped[str] = mapped_column(String(120), nullable=False)
-    counterpart_initials: Mapped[str] = mapped_column(String(4), nullable=False)
-    counterpart_bg: Mapped[str] = mapped_column(String(16), nullable=False, default="#F5F5F4")
-    counterpart_fg: Mapped[str] = mapped_column(String(16), nullable=False, default="#515c67")
-    last_message_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
-    last_preview: Mapped[str] = mapped_column(Text, nullable=False, default="")
-    unread: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
+    vet_id: Mapped[uuid.UUID | None] = mapped_column(
+        UUID(as_uuid=True),
+        ForeignKey("accounts.id", ondelete="SET NULL"),
+        index=True,
+        nullable=True,
+    )
 
-    user = relationship("User", back_populates="chat_threads")
+    subject: Mapped[str] = mapped_column(String(160), nullable=False, default="")
+    status: Mapped[ChatStatus] = mapped_column(
+        Enum(ChatStatus, native_enum=False),
+        nullable=False,
+        default=ChatStatus.INITIATED,
+        index=True,
+    )
+    started_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+    ended_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True), nullable=True
+    )
+
+    pet_owner = relationship(
+        "Account", foreign_keys=[pet_owner_id], lazy="joined"
+    )
+    vet = relationship("Account", foreign_keys=[vet_id], lazy="joined")
     messages = relationship(
-        "ChatMessage", back_populates="thread", cascade="all, delete-orphan", order_by="ChatMessage.sent_at"
+        "ChatMessage",
+        back_populates="chat",
+        cascade="all, delete-orphan",
+        order_by="ChatMessage.sent_at",
     )
+
+    # ------------------------------------------------------------------ #
+    # Behaviour                                                          #
+    # ------------------------------------------------------------------ #
+    def join(self, vet_id: uuid.UUID) -> None:
+        """Veterinary expert joins; status transitions to Active."""
+        if self.status == ChatStatus.CLOSED:
+            raise ValueError("Cannot join a closed chat.")
+        self.vet_id = vet_id
+        self.status = ChatStatus.ACTIVE
+
+    def close(self) -> None:
+        """Either actor closes the session."""
+        self.status = ChatStatus.CLOSED
+        self.ended_at = datetime.now(timezone.utc)
 
 
 class ChatMessage(UUIDPkMixin, TimestampMixin, Base):
     __tablename__ = "chat_messages"
 
-    thread_id: Mapped[uuid.UUID] = mapped_column(
+    chat_id: Mapped[uuid.UUID] = mapped_column(
         UUID(as_uuid=True),
-        ForeignKey("chat_threads.id", ondelete="CASCADE"),
+        ForeignKey("chats.id", ondelete="CASCADE"),
         index=True,
         nullable=False,
     )
-    sender: Mapped[str] = mapped_column(String(20), nullable=False)  # "user" | "vet"
+    sender_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True),
+        ForeignKey("accounts.id", ondelete="CASCADE"),
+        index=True,
+        nullable=False,
+    )
     body: Mapped[str] = mapped_column(Text, nullable=False)
     sent_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
 
-    thread = relationship("ChatThread", back_populates="messages")
+    chat = relationship("Chat", back_populates="messages")
+    sender = relationship("Account", lazy="joined")

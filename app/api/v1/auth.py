@@ -1,57 +1,59 @@
+"""Auth endpoints — login, register, refresh, MFA.
+
+All logic is delegated to :class:`AuthManager` so this router is a thin
+HTTP adapter. SRS scenario 7.8 (account registration with email
+verification) is implemented as the register → /auth/verify-email flow;
+the email send step is stubbed for Assignment 3 scope.
+"""
+from __future__ import annotations
+
 from fastapi import APIRouter, HTTPException, status
-from sqlalchemy import select
 
 from app.api.deps import DbDep
-from app.core.security import create_token, decode_token, hash_password, verify_password
-from app.models.user import User
+from app.core.security import create_token, decode_token
+from app.domain.app_controller import get_app_controller
+from app.models.account import Account
 from app.schemas.auth import LoginRequest, RefreshRequest, RegisterRequest, TokenPair
 
 router = APIRouter(prefix="/auth", tags=["auth"])
 
 
-def _initials_from_name(name: str) -> str:
-    parts = [p for p in name.split() if p]
-    if not parts:
-        return "?"
-    if len(parts) == 1:
-        return parts[0][:2].upper()
-    return (parts[0][0] + parts[-1][0]).upper()
-
-
-def _tokens_for(user: User) -> TokenPair:
-    sub = str(user.id)
+def _issue_tokens(account: Account) -> TokenPair:
+    sub = str(account.id)
     return TokenPair(
         access_token=create_token(sub, "access"),
         refresh_token=create_token(sub, "refresh"),
+        role=account.role,
     )
 
 
-@router.post("/register", response_model=TokenPair, status_code=status.HTTP_201_CREATED)
+@router.post(
+    "/register", response_model=TokenPair, status_code=status.HTTP_201_CREATED
+)
 async def register(payload: RegisterRequest, db: DbDep) -> TokenPair:
-    existing = await db.scalar(select(User).where(User.email == payload.email.lower()))
-    if existing is not None:
-        raise HTTPException(status.HTTP_409_CONFLICT, detail="Email already registered")
-
-    user = User(
-        email=payload.email.lower(),
+    """Create a new account via :class:`AuthManager` (Factory Method)."""
+    controller = get_app_controller()
+    account = await controller.auth_manager.register(
+        db,
+        role=payload.role,
         full_name=payload.full_name,
-        initials=_initials_from_name(payload.full_name),
-        hashed_password=hash_password(payload.password),
+        email=payload.email,
+        password=payload.password,
     )
-    db.add(user)
-    await db.commit()
-    await db.refresh(user)
-    return _tokens_for(user)
+    return _issue_tokens(account)
 
 
 @router.post("/login", response_model=TokenPair)
 async def login(payload: LoginRequest, db: DbDep) -> TokenPair:
-    user = await db.scalar(select(User).where(User.email == payload.email.lower()))
-    if user is None or not verify_password(payload.password, user.hashed_password):
-        raise HTTPException(status.HTTP_401_UNAUTHORIZED, detail="Invalid email or password")
-    if not user.is_active:
-        raise HTTPException(status.HTTP_403_FORBIDDEN, detail="Account disabled")
-    return _tokens_for(user)
+    """Authenticate the actor and return an access/refresh token pair."""
+    controller = get_app_controller()
+    account = await controller.auth_manager.authenticate(
+        db,
+        email=payload.email,
+        password=payload.password,
+        mfa_token=payload.mfa_token,
+    )
+    return _issue_tokens(account)
 
 
 @router.post("/refresh", response_model=TokenPair)
@@ -63,9 +65,7 @@ async def refresh(payload: RefreshRequest, db: DbDep) -> TokenPair:
     if claims.get("type") != "refresh":
         raise HTTPException(status.HTTP_401_UNAUTHORIZED, detail="Wrong token type")
     sub = claims.get("sub")
-    if not sub:
-        raise HTTPException(status.HTTP_401_UNAUTHORIZED, detail="Invalid refresh token")
-    user = await db.get(User, sub)
-    if user is None or not user.is_active:
-        raise HTTPException(status.HTTP_401_UNAUTHORIZED, detail="User not found")
-    return _tokens_for(user)
+    account = await db.get(Account, sub) if sub else None
+    if account is None or not account.is_active:
+        raise HTTPException(status.HTTP_401_UNAUTHORIZED, detail="Account not found")
+    return _issue_tokens(account)

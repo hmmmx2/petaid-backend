@@ -1,173 +1,300 @@
-"""Seed the database with Alwin's demo data matching the dashboard mockup.
+"""Seed demo data — Alwin (Pet Owner) and Dr. Kavitha (Vet Expert).
+
+Idempotent: re-running is safe. The scenarios in SRS Section 7 can be
+walked through end-to-end against the data this script lays down.
 
 Usage:
     python -m app.seed
 """
+from __future__ import annotations
+
 import asyncio
-import random
+import logging
 from datetime import datetime, timedelta, timezone
 
 from sqlalchemy import select
 
-from app.core.database import SessionLocal, engine
+from app.core.database import Base, SessionLocal, engine
 from app.core.security import hash_password
-from app.models.chat import ChatThread
+from app.models.account import PetOwner, VeterinaryExpert
+from app.models.chat import Chat, ChatStatus
+from app.models.credentials import UserCredentials
+from app.models.donation import Donation, DonationRecord, DonationStatus
+from app.models.feedback import Feedback, FeedbackEntry, FeedbackTargetType
+from app.models.first_aid import FirstAidGuidance
+from app.models.inquiry import Inquiry, InquiryStatus
 from app.models.pet import Pet
+from app.models.pet_type import PetType
 from app.models.quiz import Quiz, QuizAttempt
-from app.models.readiness import ReadinessCategory, UserReadiness
-from app.models.reminder import Reminder
-from app.models.resource import Resource, UserResource
-from app.models.user import User
+from app.models.resource import Resource, ResourceStatus
 
-DEMO_EMAIL = "alwin@petaid.local"
-DEMO_PASSWORD = "petaid-demo-2026"
+logger = logging.getLogger("petaid.seed")
+logging.basicConfig(level=logging.INFO)
+
+OWNER_EMAIL = "alwin@petaid.local"
+OWNER_PASSWORD = "petaid-demo-2026"
+VET_EMAIL = "vet@petaid.local"
+VET_PASSWORD = "petaid-vet-2026"
+VET_MFA_CODE = "123456"
+
+
+async def create_schema() -> None:
+    """Create tables for dev / first-run convenience.
+
+    Production deployments should run ``alembic upgrade head`` instead.
+    """
+    async with engine.begin() as conn:
+        await conn.run_sync(Base.metadata.create_all)
 
 
 async def seed() -> None:
+    await create_schema()
+
     async with SessionLocal() as db:
-        # idempotent: skip if Alwin exists
-        existing = await db.scalar(select(User).where(User.email == DEMO_EMAIL))
+        existing = await db.scalar(
+            select(UserCredentials).where(UserCredentials.email == OWNER_EMAIL)
+        )
         if existing is not None:
-            print(f"User {DEMO_EMAIL} already exists, skipping seed.")
+            logger.info("Demo data already present — skipping seed.")
             return
 
         now = datetime.now(timezone.utc)
 
-        alwin = User(
-            email=DEMO_EMAIL,
-            full_name="Alwin Tay",
-            initials="AT",
-            role="Pet Owner",
-            hashed_password=hash_password(DEMO_PASSWORD),
+        # --- Actors ---------------------------------------------------- #
+        owner = PetOwner(
+            full_name="Alwin Tay", initials="AT", email_verified=True
         )
-        db.add(alwin)
+        vet = VeterinaryExpert(
+            full_name="Dr. Kavitha Subramaniam", initials="KS", email_verified=True
+        )
+        db.add_all([owner, vet])
         await db.flush()
 
+        db.add(
+            UserCredentials(
+                account_id=owner.id,
+                email=OWNER_EMAIL,
+                hashed_password=hash_password(OWNER_PASSWORD),
+            )
+        )
+        db.add(
+            UserCredentials(
+                account_id=vet.id,
+                email=VET_EMAIL,
+                hashed_password=hash_password(VET_PASSWORD),
+                mfa_enabled=True,
+                mfa_secret=VET_MFA_CODE,
+            )
+        )
+
+        # --- Pet Types ------------------------------------------------- #
+        pt_dog = PetType(name="Dog", icon_emoji="🐕", icon_bg="#E1F5EE", sort_order=1)
+        pt_cat = PetType(name="Cat", icon_emoji="🐈", icon_bg="#FDECEA", sort_order=2)
+        pt_rabbit = PetType(name="Rabbit", icon_emoji="🐇", icon_bg="#FAEEDA", sort_order=3)
+        db.add_all([pt_dog, pt_cat, pt_rabbit])
+        await db.flush()
+
+        # --- Pets (aggregated by Alwin) -------------------------------- #
         pets = [
-            Pet(owner_id=alwin.id, name="Mochi", species="dog", breed="Golden",
-                age_years=3, icon_emoji="🐕", icon_bg="#E1F5EE"),
-            Pet(owner_id=alwin.id, name="Luna", species="cat", breed="Tabby",
-                age_years=2, icon_emoji="🐈", icon_bg="#FDECEA"),
-            Pet(owner_id=alwin.id, name="Biscuit", species="rabbit", breed="Rabbit",
-                age_years=1, icon_emoji="🐇", icon_bg="#FAEEDA"),
+            Pet(owner_id=owner.id, pet_type_id=pt_dog.id, name="Mochi", breed="Golden", age_years=3),
+            Pet(owner_id=owner.id, pet_type_id=pt_cat.id, name="Luna", breed="Tabby", age_years=2),
+            Pet(owner_id=owner.id, pet_type_id=pt_rabbit.id, name="Biscuit", breed="Holland Lop", age_years=1),
         ]
         db.add_all(pets)
 
-        quiz_definitions = [
-            ("Dog Emergency Basics", "Dog Emergency Care"),
-            ("Cat First Aid Essentials", "Cat First Aid"),
-            ("Rabbit Safety 101", "Rabbit Safety"),
-            ("Wound & Bleeding Response", "Wound & Bleeding"),
-            ("Poisoning Response", "Poisoning Response"),
-        ]
-        quizzes = [Quiz(title=t, category=c, question_count=10) for t, c in quiz_definitions]
-        db.add_all(quizzes)
+        # --- Resources (published by the vet) -------------------------- #
+        r_cpr = Resource(
+            pet_type_id=pt_dog.id, author_id=vet.id,
+            title="Dog CPR Step-by-Step Video", content_type="video",
+            media_path="https://media.petaid.local/dog-cpr.mp4",
+            status=ResourceStatus.PUBLISHED,
+        )
+        r_poison = Resource(
+            pet_type_id=pt_cat.id, author_id=vet.id,
+            title="Cat Poisoning Guide", content_type="pdf",
+            media_path="https://media.petaid.local/cat-poisoning.pdf",
+            status=ResourceStatus.PUBLISHED,
+        )
+        r_wound = Resource(
+            pet_type_id=pt_rabbit.id, author_id=vet.id,
+            title="Rabbit Wound Care Images", content_type="images",
+            media_path="https://media.petaid.local/rabbit-wound.png",
+            status=ResourceStatus.DRAFT,  # left in draft for the approval scenario
+        )
+        db.add_all([r_cpr, r_poison, r_wound])
         await db.flush()
 
-        # 12 quiz attempts across the last 4 months → avg ~78%
-        rng = random.Random(42)
-        target_scores = [55, 62, 68, 71, 74, 78, 80, 82, 84, 86, 88, 91]
-        for i, score in enumerate(target_scores):
-            month_offset = 3 - (i // 3)  # spread across 4 months, recent first
-            completed = now - timedelta(days=month_offset * 28 + rng.randint(0, 25))
-            db.add(QuizAttempt(
-                user_id=alwin.id,
-                quiz_id=rng.choice(quizzes).id,
-                score_pct=score,
-                completed_at=completed,
-            ))
-
-        # 9 guidance sessions this month: encoded as 4 chat threads + 5 historical ones we track via creation.
-        # The dashboard surfaces threads as chats and counts month-anchored threads as "guidance sessions".
-        threads = [
-            ChatThread(user_id=alwin.id, counterpart_name="Dr. Kavitha",
-                       counterpart_initials="DK", counterpart_bg="#E1F5EE", counterpart_fg="#085041",
-                       last_message_at=now.replace(hour=10, minute=30, second=0, microsecond=0),
-                       last_preview="Mochi's paw looks fine, apply ointment tonight…",
-                       unread=True),
-            ChatThread(user_id=alwin.id, counterpart_name="VetTeam Support",
-                       counterpart_initials="VT", counterpart_bg="#FDECEA", counterpart_fg="#b84c36",
-                       last_message_at=now - timedelta(days=2),
-                       last_preview="Your inquiry about Luna has been reviewed…",
-                       unread=False),
-            ChatThread(user_id=alwin.id, counterpart_name="Dr. Rania",
-                       counterpart_initials="DR", counterpart_bg="#EEEDFE", counterpart_fg="#3C3489",
-                       last_message_at=now - timedelta(days=3),
-                       last_preview="Follow-up on Biscuit — diet improving well",
-                       unread=False),
-            ChatThread(user_id=alwin.id, counterpart_name="PetAid Alerts",
-                       counterpart_initials="PA", counterpart_bg="#F5F5F4", counterpart_fg="#515c67",
-                       last_message_at=now - timedelta(days=20),
-                       last_preview="New resource: Rabbit emergency handling guide",
-                       unread=False),
-        ]
-        # add 5 extra "guidance session" threads dated this month for the stat card
-        for n in range(5):
-            threads.append(ChatThread(
-                user_id=alwin.id,
-                counterpart_name=f"VetCare Session {n+1}",
-                counterpart_initials="VC",
-                counterpart_bg="#F5F5F4",
-                counterpart_fg="#515c67",
-                last_message_at=now - timedelta(days=rng.randint(1, 25)),
-                last_preview="Session summary uploaded.",
-                unread=False,
-            ))
-        db.add_all(threads)
-
-        resources = [
-            Resource(title="Dog CPR Step-by-Step Video", kind="video", category="Dog Emergency Care"),
-            Resource(title="Cat Poisoning Guide (PDF)", kind="pdf", category="Poisoning Response"),
-            Resource(title="Rabbit Wound Care Images", kind="images", category="Rabbit Safety"),
-        ]
-        db.add_all(resources)
-        await db.flush()
-
-        statuses = ["watched", "in_progress", "new"]
-        for r, status in zip(resources, statuses):
-            db.add(UserResource(user_id=alwin.id, resource_id=r.id, status=status))
-
-        categories = [
-            ReadinessCategory(name="Dog Emergency Care", color="#1D9E75", sort_order=1),
-            ReadinessCategory(name="Cat First Aid", color="#EC6B52", sort_order=2),
-            ReadinessCategory(name="Rabbit Safety", color="#EF9F27", sort_order=3),
-            ReadinessCategory(name="Wound & Bleeding", color="#534AB7", sort_order=4),
-            ReadinessCategory(name="Poisoning Response", color="#5DCAA5", sort_order=5),
-        ]
-        db.add_all(categories)
-        await db.flush()
-
-        readiness_scores = [82, 61, 38, 74, 55]
-        for cat, score in zip(categories, readiness_scores):
-            db.add(UserReadiness(user_id=alwin.id, category_id=cat.id, score_pct=score))
-
-        db.add_all([
-            Reminder(
-                user_id=alwin.id,
-                title="Retake Cat Quiz",
-                body="Improve your 61% cat first aid score",
-                kind="quiz",
-                due_at=now + timedelta(days=1),
-                icon_color="#EC6B52",
+        # --- First Aid Guidance ---------------------------------------- #
+        guidance = [
+            FirstAidGuidance(
+                pet_type_id=pt_dog.id, author_id=vet.id,
+                title="Dog Choking — Emergency Protocol",
+                emergency_type="Choking",
+                summary="Quick airway clearance for a choking dog.",
+                steps=[
+                    "Stay calm and keep the dog still.",
+                    "Open the mouth gently and check for visible obstruction.",
+                    "If visible, sweep with a finger — do not push the object deeper.",
+                    "Perform back blows between shoulder blades up to five times.",
+                    "If unconscious, begin CPR and call emergency vet immediately.",
+                ],
             ),
-            Reminder(
-                user_id=alwin.id,
-                title="New Resource Ready",
-                body="Rabbit wound care — approved by vet expert",
-                kind="resource",
-                due_at=now + timedelta(days=30),
-                icon_color="#1D9E75",
+            FirstAidGuidance(
+                pet_type_id=pt_cat.id, author_id=vet.id,
+                title="Cat Poisoning — First Response",
+                emergency_type="Poisoning",
+                summary="Stabilise the cat before transport to the clinic.",
+                steps=[
+                    "Identify and remove the toxic substance from reach.",
+                    "Note packaging or remaining material to bring to the vet.",
+                    "Do not induce vomiting unless instructed by a vet.",
+                    "Keep the cat warm and quiet during transport.",
+                    "Call the emergency vet line for product-specific guidance.",
+                ],
             ),
-        ])
+        ]
+        db.add_all(guidance)
+        await db.flush()
+        guidance[0].resources.append(r_cpr)
+        guidance[1].resources.append(r_poison)
+
+        # --- Quizzes --------------------------------------------------- #
+        quiz_cpr = Quiz(
+            resource_id=r_cpr.id,
+            title="Dog CPR Basics",
+            passing_score=60,
+            questions=[
+                {
+                    "prompt": "How often should you perform compressions per minute?",
+                    "options": ["30-50", "60-80", "100-120", "150-180"],
+                    "answer_index": 2,
+                },
+                {
+                    "prompt": "Where should you place your hands for a medium-sized dog?",
+                    "options": [
+                        "Over the abdomen",
+                        "Highest point of the chest",
+                        "On the neck",
+                        "On the spine",
+                    ],
+                    "answer_index": 1,
+                },
+                {
+                    "prompt": "When should you call the emergency vet?",
+                    "options": [
+                        "Only if compressions fail",
+                        "Immediately, while administering CPR",
+                        "After 30 minutes of CPR",
+                        "Never — handle it yourself",
+                    ],
+                    "answer_index": 1,
+                },
+            ],
+        )
+        quiz_poison = Quiz(
+            resource_id=r_poison.id,
+            title="Cat Poisoning Response",
+            passing_score=60,
+            questions=[
+                {
+                    "prompt": "Should you induce vomiting if a cat ingested chocolate?",
+                    "options": ["Always", "Only with vet instruction", "Never", "If under 5 minutes"],
+                    "answer_index": 1,
+                },
+                {
+                    "prompt": "What should you bring with you to the clinic?",
+                    "options": ["Toys", "Packaging of the toxin", "Litter box", "Food bowl"],
+                    "answer_index": 1,
+                },
+            ],
+        )
+        db.add_all([quiz_cpr, quiz_poison])
+        await db.flush()
+
+        # --- Quiz attempts (so the dashboard shows real numbers) ------- #
+        rng_scores = [55, 68, 74, 78, 82, 88, 92]
+        for i, score in enumerate(rng_scores):
+            db.add(
+                QuizAttempt(
+                    pet_owner_id=owner.id,
+                    quiz_id=quiz_cpr.id if i % 2 == 0 else quiz_poison.id,
+                    score_pct=score,
+                    passed=score >= 60,
+                    answers=[1, 1, 1],
+                    completed_at=now - timedelta(days=(7 - i) * 5),
+                )
+            )
+
+        # --- Inquiry --------------------------------------------------- #
+        db.add(
+            Inquiry(
+                pet_owner_id=owner.id,
+                subject="Luna seems lethargic — non-urgent",
+                question="Luna has been sleeping more than usual for the last 3 days. "
+                "Eating fine. Should I be worried?",
+                status=InquiryStatus.PENDING,
+                submitted_at=now - timedelta(hours=6),
+            )
+        )
+
+        # --- Chat ------------------------------------------------------ #
+        chat = Chat(
+            pet_owner_id=owner.id,
+            vet_id=vet.id,
+            subject="Quick follow-up on Mochi's paw",
+            status=ChatStatus.ACTIVE,
+            started_at=now - timedelta(hours=2),
+        )
+        db.add(chat)
+
+        # --- Donation (with composed immutable record) ----------------- #
+        donation = Donation(
+            pet_owner_id=owner.id,
+            amount_cents=2500,
+            currency="USD",
+            status=DonationStatus.SUCCEEDED,
+        )
+        db.add(donation)
+        await db.flush()
+        db.add(
+            DonationRecord(
+                donation_id=donation.id,
+                transaction_ref="TXN-SEEDED0000001",
+                provider="MockProvider",
+                amount_cents=2500,
+                currency="USD",
+                final_status="succeeded",
+                processed_at=now - timedelta(days=1),
+            )
+        )
+
+        # --- Feedback (composed entry) --------------------------------- #
+        feedback = Feedback(
+            submitter_id=owner.id,
+            target_type=FeedbackTargetType.RESOURCE,
+            target_id=r_cpr.id,
+            flagged=False,
+        )
+        db.add(feedback)
+        await db.flush()
+        db.add(
+            FeedbackEntry(
+                feedback_id=feedback.id,
+                rating=5,
+                comment="Saved Mochi's life — clear, calm steps.",
+            )
+        )
 
         await db.commit()
-        print(f"Seeded user {DEMO_EMAIL} / password {DEMO_PASSWORD}")
+        logger.info("Seed complete.")
+        logger.info("  Pet Owner login : %s / %s", OWNER_EMAIL, OWNER_PASSWORD)
+        logger.info("  Vet Expert login: %s / %s  (MFA: %s)", VET_EMAIL, VET_PASSWORD, VET_MFA_CODE)
 
 
-async def main() -> None:
+async def _main() -> None:
     await seed()
     await engine.dispose()
 
 
 if __name__ == "__main__":
-    asyncio.run(main())
+    asyncio.run(_main())
