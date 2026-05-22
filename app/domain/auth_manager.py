@@ -81,14 +81,23 @@ class AuthManager:
         email: str,
         password: str,
     ) -> tuple[Account, str]:
-        """Create a new (unverified) account and return ``(account, code)``.
+        """Create a new (unverified) Pet Owner account and return
+        ``(account, code)``.
 
-        ``role`` must be one of ``"pet_owner"`` or ``"veterinary_expert"``.
-        Vet accounts have MFA enabled at creation time (SRS A1). A 6-digit
-        email-verification code is generated and returned so the SRS §7.8
-        flow can complete; the account stays inactive for login until the
-        code is confirmed.
+        Only ``"pet_owner"`` may self-register. Veterinary Expert accounts are
+        provisioned by the Veterinary Association (SRS §3.1.3.3) and seeded —
+        allowing self-registration would also let a caller obtain a vet token
+        through the email-verification path without ever completing MFA.
+
+        A 6-digit email-verification code is generated; the account cannot log
+        in until the code is confirmed (SRS §7.8).
         """
+        if role != "pet_owner":
+            raise InvalidInputException(
+                "role",
+                "Veterinary Expert accounts are provisioned by the Veterinary "
+                "Association and cannot be self-registered.",
+            )
         self._validate_input(full_name=full_name, email=email, password=password)
         email = email.strip().lower()
 
@@ -193,8 +202,9 @@ class AuthManager:
         if creds.mfa_enabled and not self._mfa_ok(creds, mfa_token):
             raise MfaRequiredException()
 
-        # Successful login — clear failure counter.
-        if creds.failed_attempts:
+        # Successful login — clear any failure counter / expired-lock marker
+        # so the cleared state is persisted (not just held in memory).
+        if creds.failed_attempts or creds.locked_until is not None:
             creds.failed_attempts = 0
             creds.locked_until = None
             await db.commit()

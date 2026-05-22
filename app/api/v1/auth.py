@@ -7,6 +7,8 @@ the email send step is stubbed for Assignment 3 scope.
 """
 from __future__ import annotations
 
+import uuid
+
 from fastapi import APIRouter, HTTPException, status
 
 from app.api.deps import DbDep
@@ -92,7 +94,11 @@ async def refresh(payload: RefreshRequest, db: DbDep) -> TokenPair:
     if claims.get("type") != "refresh":
         raise HTTPException(status.HTTP_401_UNAUTHORIZED, detail="Wrong token type")
     sub = claims.get("sub")
-    account = await db.get(Account, sub) if sub else None
+    try:
+        account_id = uuid.UUID(sub) if sub else None
+    except (ValueError, TypeError) as exc:
+        raise HTTPException(status.HTTP_401_UNAUTHORIZED, detail="Invalid refresh token") from exc
+    account = await db.get(Account, account_id) if account_id else None
     if account is None or not account.is_active:
         raise HTTPException(status.HTTP_401_UNAUTHORIZED, detail="Account not found")
     return _issue_tokens(account)
