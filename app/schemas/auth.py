@@ -18,14 +18,16 @@ class RegisterRequest(BaseModel):
 class RegisterResponse(BaseModel):
     """Registration does not log the user in — it triggers email verification.
 
-    ``verification_code`` is returned directly because A3 has no real mail
-    server (the reference shows it in a banner). Remove this field once a
-    real mail provider is wired in.
+    ``verification_code`` is **only** populated outside production (there is
+    no mail server in dev, so the code is surfaced for local testing). In
+    production it is ``None`` and the real code is delivered by email — it
+    must never reach the client, to avoid leaking a credential that would
+    let anyone verify an address they don't control.
     """
 
     email: str
-    verification_code: str
-    message: str = "Account created. Enter the verification code to finish."
+    verification_code: str | None = None
+    message: str = "Account created. Check your email for a verification code."
 
 
 class VerifyEmailRequest(BaseModel):

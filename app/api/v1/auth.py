@@ -10,6 +10,7 @@ from __future__ import annotations
 from fastapi import APIRouter, HTTPException, status
 
 from app.api.deps import DbDep
+from app.core.config import get_settings
 from app.core.security import create_token, decode_token
 from app.domain.app_controller import get_app_controller
 from app.models.account import Account
@@ -51,7 +52,12 @@ async def register(payload: RegisterRequest, db: DbDep) -> RegisterResponse:
         email=payload.email,
         password=payload.password,
     )
-    return RegisterResponse(email=payload.email.lower(), verification_code=code)
+    # SECURITY: never return the verification code in production — it would
+    # let a client verify an email they don't control. In production the code
+    # is delivered out-of-band (email). Dev surfaces it because there's no
+    # mail server locally.
+    exposed_code = None if get_settings().is_production else code
+    return RegisterResponse(email=payload.email.lower(), verification_code=exposed_code)
 
 
 @router.post("/verify-email", response_model=TokenPair)
