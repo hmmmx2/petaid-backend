@@ -8,6 +8,7 @@ from fastapi import APIRouter, status
 from sqlalchemy import select
 
 from app.api.deps import CurrentAccountDep, CurrentPetOwnerDep, CurrentVetDep, DbDep
+from app.core.rate_limit import enforce
 from app.domain.exceptions import InvalidInputException, NotFoundException
 from app.models.quiz import Quiz, QuizAttempt
 from app.schemas.common import (
@@ -119,6 +120,8 @@ async def submit_attempt(
     list is rejected rather than silently scored as wrong, so a truncated or
     malformed request never produces a misleading score.
     """
+    # Anti-spam: cap quiz submissions per owner.
+    enforce("quiz_attempt", str(owner.id), max_requests=30, window_seconds=3600)
     quiz = await db.get(Quiz, quiz_id)
     if quiz is None:
         raise NotFoundException("Quiz")

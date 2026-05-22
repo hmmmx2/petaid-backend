@@ -13,6 +13,7 @@ from sqlalchemy import or_, select
 from sqlalchemy.orm import selectinload
 
 from app.api.deps import CurrentAccountDep, CurrentPetOwnerDep, CurrentVetDep, DbDep
+from app.core.rate_limit import enforce
 from app.domain.app_controller import get_app_controller
 from app.domain.events import (
     CH_CHAT_CLOSED,
@@ -32,6 +33,8 @@ router = APIRouter(prefix="/chats", tags=["chats"])
 async def start_chat(
     payload: ChatIn, owner: CurrentPetOwnerDep, db: DbDep
 ) -> Chat:
+    # Anti-spam: cap new chat sessions per owner.
+    enforce("chat_create", str(owner.id), max_requests=10, window_seconds=3600)
     chat = Chat(
         pet_owner_id=owner.id,
         subject=payload.subject,
@@ -107,6 +110,8 @@ async def post_message(
     account: CurrentAccountDep,
     db: DbDep,
 ) -> ChatMessage:
+    # Anti-spam: cap message rate per sender (message flooding).
+    enforce("chat_message", str(account.id), max_requests=20, window_seconds=60)
     chat = await db.get(Chat, chat_id)
     if chat is None:
         raise NotFoundException("Chat")

@@ -9,10 +9,11 @@ from __future__ import annotations
 
 import uuid
 
-from fastapi import APIRouter, HTTPException, status
+from fastapi import APIRouter, Depends, HTTPException, status
 
 from app.api.deps import DbDep
 from app.core.config import get_settings
+from app.core.rate_limit import rate_limit_ip
 from app.core.security import create_token, decode_token
 from app.domain.app_controller import get_app_controller
 from app.models.account import Account
@@ -39,7 +40,10 @@ def _issue_tokens(account: Account) -> TokenPair:
 
 
 @router.post(
-    "/register", response_model=RegisterResponse, status_code=status.HTTP_201_CREATED
+    "/register",
+    response_model=RegisterResponse,
+    status_code=status.HTTP_201_CREATED,
+    dependencies=[Depends(rate_limit_ip("auth_register", max_requests=5, window_seconds=900))],
 )
 async def register(payload: RegisterRequest, db: DbDep) -> RegisterResponse:
     """Create a new account via :class:`AuthManager` (Factory Method).
@@ -63,7 +67,11 @@ async def register(payload: RegisterRequest, db: DbDep) -> RegisterResponse:
     return RegisterResponse(email=payload.email.lower(), verification_code=exposed_code)
 
 
-@router.post("/resend-verification", response_model=RegisterResponse)
+@router.post(
+    "/resend-verification",
+    response_model=RegisterResponse,
+    dependencies=[Depends(rate_limit_ip("auth_resend", max_requests=5, window_seconds=900))],
+)
 async def resend_verification(
     payload: ResendVerificationRequest, db: DbDep
 ) -> RegisterResponse:
@@ -83,7 +91,11 @@ async def resend_verification(
     )
 
 
-@router.post("/verify-email", response_model=TokenPair)
+@router.post(
+    "/verify-email",
+    response_model=TokenPair,
+    dependencies=[Depends(rate_limit_ip("auth_verify", max_requests=15, window_seconds=600))],
+)
 async def verify_email(payload: VerifyEmailRequest, db: DbDep) -> TokenPair:
     """Confirm the email code and log the user in (returns tokens)."""
     controller = get_app_controller()
@@ -93,7 +105,11 @@ async def verify_email(payload: VerifyEmailRequest, db: DbDep) -> TokenPair:
     return _issue_tokens(account)
 
 
-@router.post("/login", response_model=TokenPair)
+@router.post(
+    "/login",
+    response_model=TokenPair,
+    dependencies=[Depends(rate_limit_ip("auth_login", max_requests=30, window_seconds=300))],
+)
 async def login(payload: LoginRequest, db: DbDep) -> TokenPair:
     """Authenticate the actor and return an access/refresh token pair."""
     controller = get_app_controller()

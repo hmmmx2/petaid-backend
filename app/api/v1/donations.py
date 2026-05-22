@@ -10,6 +10,7 @@ from fastapi import APIRouter, status
 from sqlalchemy import select
 
 from app.api.deps import CurrentAccountDep, CurrentPetOwnerDep, DbDep
+from app.core.rate_limit import enforce
 from app.domain.app_controller import get_app_controller
 from app.domain.events import CH_DONATION_COMPLETED, DomainEvent
 from app.domain.exceptions import PaymentFailedException
@@ -28,6 +29,9 @@ _processor = MockPaymentProcessor()
 async def create_donation(
     payload: DonationIn, owner: CurrentPetOwnerDep, db: DbDep
 ) -> DonationOut:
+    # Anti-spam: cap donation attempts per account (also limits card-testing
+    # abuse against the payment processor).
+    enforce("donation_create", str(owner.id), max_requests=10, window_seconds=3600)
     donation = Donation(
         pet_owner_id=owner.id,
         amount_cents=payload.amount_cents,

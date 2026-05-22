@@ -8,6 +8,7 @@ from fastapi import APIRouter, status
 from sqlalchemy import or_, select
 
 from app.api.deps import CurrentAccountDep, CurrentPetOwnerDep, CurrentVetDep, DbDep
+from app.core.rate_limit import enforce
 from app.domain.app_controller import get_app_controller
 from app.domain.events import CH_INQUIRY_RESPONDED, CH_INQUIRY_SUBMITTED, DomainEvent
 from app.domain.exceptions import (
@@ -26,6 +27,8 @@ router = APIRouter(prefix="/inquiries", tags=["inquiries"])
 async def submit_inquiry(
     payload: InquiryIn, owner: CurrentPetOwnerDep, db: DbDep
 ) -> Inquiry:
+    # Anti-spam: cap inquiry submissions per owner.
+    enforce("inquiry_create", str(owner.id), max_requests=10, window_seconds=3600)
     inquiry = Inquiry(
         pet_owner_id=owner.id,
         subject=payload.subject,

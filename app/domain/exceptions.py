@@ -106,3 +106,21 @@ class NotFoundException(PetAidError):
     def __init__(self, entity: str) -> None:
         super().__init__(f"{entity} not found.")
         self.entity = entity
+
+
+class RateLimitedException(PetAidError):
+    """Raised when a caller exceeds an abuse-prevention rate limit.
+
+    Carries ``retry_after_seconds`` so the exception handler can both surface
+    it in the JSON body and emit a standards-compliant ``Retry-After`` header.
+    """
+
+    code = "rate_limited"
+    http_status = 429  # Too Many Requests
+
+    def __init__(self, retry_after_seconds: int, message: str | None = None) -> None:
+        super().__init__(
+            message
+            or f"Too many requests. Please slow down and try again in {retry_after_seconds}s."
+        )
+        self.retry_after_seconds = retry_after_seconds

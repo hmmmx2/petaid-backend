@@ -6,6 +6,7 @@ from sqlalchemy import select
 from sqlalchemy.orm import selectinload
 
 from app.api.deps import CurrentPetOwnerDep, CurrentVetDep, DbDep
+from app.core.rate_limit import enforce
 from app.domain.app_controller import get_app_controller
 from app.domain.events import CH_FEEDBACK_FLAGGED, CH_FEEDBACK_SUBMITTED, DomainEvent
 from app.models.feedback import Feedback, FeedbackEntry, FeedbackTargetType
@@ -30,6 +31,8 @@ def _to_out(f: Feedback) -> FeedbackOut:
 async def submit_feedback(
     payload: FeedbackIn, owner: CurrentPetOwnerDep, db: DbDep
 ) -> FeedbackOut:
+    # Anti-spam: cap feedback submissions per owner.
+    enforce("feedback_create", str(owner.id), max_requests=20, window_seconds=3600)
     feedback = Feedback(
         submitter_id=owner.id,
         target_type=FeedbackTargetType(payload.target_type),

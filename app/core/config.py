@@ -1,6 +1,6 @@
 from functools import lru_cache
 
-from pydantic import Field
+from pydantic import Field, model_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
@@ -14,6 +14,9 @@ class Settings(BaseSettings):
     access_token_expire_minutes: int = Field(default=30)
     refresh_token_expire_days: int = Field(default=14)
     cors_origins: str = Field(default="http://localhost:3000")
+
+    # Abuse prevention. Disable only in controlled test environments.
+    rate_limit_enabled: bool = Field(default=True)
 
     # --- Database / Supabase tuning -------------------------------------- #
     # Require TLS to the database. Supabase mandates SSL; local docker does not.
@@ -33,6 +36,27 @@ class Settings(BaseSettings):
     @property
     def is_production(self) -> bool:
         return self.environment.lower() == "production"
+
+    # Known weak/sample secrets that must never reach production.
+    _WEAK_SECRETS = {"", "secret", "changeme", "dev", "test", "petaid", "supersecret"}
+
+    @model_validator(mode="after")
+    def _harden_production(self) -> "Settings":
+        """Fail fast on insecure production configuration.
+
+        A weak/short JWT secret or a wildcard CORS origin in production is a
+        critical vulnerability (token forgery / CSRF surface), so we refuse to
+        boot rather than start in an unsafe state.
+        """
+        if self.is_production:
+            secret = (self.jwt_secret or "").strip()
+            if len(secret) < 32 or secret.lower() in self._WEAK_SECRETS:
+                raise ValueError(
+                    "JWT_SECRET must be a strong random value (>=32 chars) in production."
+                )
+            if "*" in self.cors_origins_list:
+                raise ValueError("CORS origins must be an explicit allow-list in production.")
+        return self
 
     @property
     def is_supabase(self) -> bool:
