@@ -78,7 +78,10 @@ class FirstAidOut(BaseModel):
 class QuizQuestion(BaseModel):
     prompt: str = Field(min_length=1, max_length=400)
     options: list[str] = Field(min_length=2, max_length=6)
-    answer_index: int = Field(ge=0)
+    # ``-1`` is used as a sentinel on the *response* side to hide the correct
+    # answer from clients; create-time validation is enforced separately in the
+    # quizzes router via a stricter input model.
+    answer_index: int = Field(ge=-1)
 
 
 class QuizIn(BaseModel):

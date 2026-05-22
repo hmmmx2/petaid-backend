@@ -58,18 +58,22 @@ class Dashboard(ABC):
             }
         """
         return {
-            "user": self._user_summary(),
+            "user": await self._user_summary(),
             "role": self._account.role,
             "panels": await self._panels(),
         }
 
-    def _user_summary(self) -> dict[str, Any]:
+    async def _user_summary(self) -> dict[str, Any]:
+        """Subclasses may override to add role-specific counts."""
         return {
             "id": str(self._account.id),
             "full_name": self._account.full_name,
             "initials": self._account.initials,
             "role": self._account.role,
             "display_name": self._account.display_name(),
+            "pets_count": 0,
+            "quizzes_count": 0,
+            "chats_count": 0,
         }
 
     @abstractmethod
@@ -82,6 +86,38 @@ class Dashboard(ABC):
 # --------------------------------------------------------------------------- #
 class PetOwnerDashboard(Dashboard):
     """Renders the Pet Owner view (SRS 3.3.3 + Assignment 1 §8.1)."""
+
+    async def _user_summary(self) -> dict[str, Any]:
+        base = await super()._user_summary()
+        owner_id = self._account.id
+        pets_count = (
+            await self._db.scalar(
+                select(func.count()).select_from(Pet).where(Pet.owner_id == owner_id)
+            )
+            or 0
+        )
+        quizzes_count = (
+            await self._db.scalar(
+                select(func.count())
+                .select_from(QuizAttempt)
+                .where(QuizAttempt.pet_owner_id == owner_id)
+            )
+            or 0
+        )
+        chats_count = (
+            await self._db.scalar(
+                select(func.count())
+                .select_from(Chat)
+                .where(Chat.pet_owner_id == owner_id)
+            )
+            or 0
+        )
+        base.update(
+            pets_count=int(pets_count),
+            quizzes_count=int(quizzes_count),
+            chats_count=int(chats_count),
+        )
+        return base
 
     async def _panels(self) -> dict[str, Any]:
         assert isinstance(self._account, PetOwner)
@@ -120,9 +156,13 @@ class PetOwnerDashboard(Dashboard):
         return list(rows)
 
     async def _load_attempts(self, owner_id: uuid.UUID) -> list[QuizAttempt]:
+        # Eager-load ``quiz`` — the readiness panel reads ``attempt.quiz.title``
+        # and the default lazy strategy would re-issue a sync query in an
+        # async session, raising ``MissingGreenlet``.
         rows = await self._db.scalars(
             select(QuizAttempt)
             .where(QuizAttempt.pet_owner_id == owner_id)
+            .options(selectinload(QuizAttempt.quiz))
             .order_by(QuizAttempt.completed_at)
         )
         return list(rows)

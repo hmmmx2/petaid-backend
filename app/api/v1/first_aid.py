@@ -7,7 +7,7 @@ from fastapi import APIRouter, status
 from sqlalchemy import select
 from sqlalchemy.orm import selectinload
 
-from app.api.deps import CurrentAccountDep, CurrentVetDep, DbDep
+from app.api.deps import CurrentVetDep, DbDep
 from app.domain.exceptions import NotFoundException
 from app.models.first_aid import FirstAidGuidance
 from app.schemas.common import FirstAidIn, FirstAidOut
@@ -15,9 +15,9 @@ from app.schemas.common import FirstAidIn, FirstAidOut
 router = APIRouter(prefix="/first-aid", tags=["first-aid"])
 
 
+# First-aid guidance is public content (SRS guest mode) — GETs need no auth.
 @router.get("", response_model=list[FirstAidOut])
 async def list_guidance(
-    _account: CurrentAccountDep,
     db: DbDep,
     pet_type_id: uuid.UUID | None = None,
     emergency_type: str | None = None,
@@ -35,9 +35,7 @@ async def list_guidance(
 
 
 @router.get("/{guidance_id}", response_model=FirstAidOut)
-async def get_guidance(
-    guidance_id: uuid.UUID, _account: CurrentAccountDep, db: DbDep
-) -> FirstAidGuidance:
+async def get_guidance(guidance_id: uuid.UUID, db: DbDep) -> FirstAidGuidance:
     g = await db.get(FirstAidGuidance, guidance_id)
     if g is None:
         raise NotFoundException("Guidance")

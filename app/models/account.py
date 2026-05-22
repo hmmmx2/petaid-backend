@@ -43,8 +43,20 @@ class Account(UUIDPkMixin, TimestampMixin, Base):
     )
 
     def display_name(self) -> str:
-        """Return the first name of the account holder for headers etc."""
-        return self.full_name.split()[0] if self.full_name else "User"
+        """Return the most useful single-token name for greetings.
+
+        Skips a leading honorific (``Dr.``, ``Prof.``, ``Mr.``, ``Ms.``)
+        so vet accounts greet ``Welcome back, Dr. Kavitha`` rather than
+        ``Welcome back, Dr. Dr.`` when the UI prepends the title itself.
+        """
+        if not self.full_name:
+            return "User"
+        parts = self.full_name.split()
+        honorifics = {"dr.", "dr", "prof.", "prof", "mr.", "ms.", "mrs."}
+        for token in parts:
+            if token.lower() not in honorifics:
+                return token
+        return parts[0]
 
 
 class PetOwner(Account):

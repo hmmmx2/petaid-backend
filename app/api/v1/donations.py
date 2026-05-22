@@ -9,7 +9,7 @@ from __future__ import annotations
 from fastapi import APIRouter, status
 from sqlalchemy import select
 
-from app.api.deps import CurrentPetOwnerDep, DbDep
+from app.api.deps import CurrentAccountDep, CurrentPetOwnerDep, DbDep
 from app.domain.app_controller import get_app_controller
 from app.domain.events import CH_DONATION_COMPLETED, DomainEvent
 from app.domain.exceptions import PaymentFailedException
@@ -86,15 +86,19 @@ async def create_donation(
 
 
 @router.get("", response_model=list[DonationOut])
-async def list_donations(owner: CurrentPetOwnerDep, db: DbDep) -> list[DonationOut]:
+async def list_donations(account: CurrentAccountDep, db: DbDep) -> list[DonationOut]:
+    """Pet Owners see their own donations; Veterinary Experts see every
+    succeeded donation for verification (SRS §7.5)."""
     from sqlalchemy.orm import selectinload
 
-    rows = await db.scalars(
-        select(Donation)
-        .where(Donation.pet_owner_id == owner.id)
-        .options(selectinload(Donation.record))
-        .order_by(Donation.created_at.desc())
-    )
+    from app.models.account import PetOwner
+
+    stmt = select(Donation).options(selectinload(Donation.record))
+    if isinstance(account, PetOwner):
+        stmt = stmt.where(Donation.pet_owner_id == account.id)
+    else:
+        stmt = stmt.where(Donation.status == DonationStatus.SUCCEEDED)
+    rows = await db.scalars(stmt.order_by(Donation.created_at.desc()))
     out = []
     for d in rows:
         out.append(

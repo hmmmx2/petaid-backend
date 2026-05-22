@@ -13,7 +13,14 @@ from app.api.deps import DbDep
 from app.core.security import create_token, decode_token
 from app.domain.app_controller import get_app_controller
 from app.models.account import Account
-from app.schemas.auth import LoginRequest, RefreshRequest, RegisterRequest, TokenPair
+from app.schemas.auth import (
+    LoginRequest,
+    RefreshRequest,
+    RegisterRequest,
+    RegisterResponse,
+    TokenPair,
+    VerifyEmailRequest,
+)
 
 router = APIRouter(prefix="/auth", tags=["auth"])
 
@@ -28,17 +35,31 @@ def _issue_tokens(account: Account) -> TokenPair:
 
 
 @router.post(
-    "/register", response_model=TokenPair, status_code=status.HTTP_201_CREATED
+    "/register", response_model=RegisterResponse, status_code=status.HTTP_201_CREATED
 )
-async def register(payload: RegisterRequest, db: DbDep) -> TokenPair:
-    """Create a new account via :class:`AuthManager` (Factory Method)."""
+async def register(payload: RegisterRequest, db: DbDep) -> RegisterResponse:
+    """Create a new account via :class:`AuthManager` (Factory Method).
+
+    Returns a verification code rather than tokens — the account must
+    confirm its email (SRS §7.8) before it can log in.
+    """
     controller = get_app_controller()
-    account = await controller.auth_manager.register(
+    _account, code = await controller.auth_manager.register(
         db,
         role=payload.role,
         full_name=payload.full_name,
         email=payload.email,
         password=payload.password,
+    )
+    return RegisterResponse(email=payload.email.lower(), verification_code=code)
+
+
+@router.post("/verify-email", response_model=TokenPair)
+async def verify_email(payload: VerifyEmailRequest, db: DbDep) -> TokenPair:
+    """Confirm the email code and log the user in (returns tokens)."""
+    controller = get_app_controller()
+    account = await controller.auth_manager.confirm_email_verification(
+        db, email=payload.email, code=payload.code
     )
     return _issue_tokens(account)
 

@@ -44,8 +44,8 @@ class InvalidCredentialsException(PetAidError):
     code = "invalid_credentials"
     http_status = 401
 
-    def __init__(self) -> None:
-        super().__init__("The email or password you entered is incorrect.")
+    def __init__(self, message: str = "The email or password you entered is incorrect.") -> None:
+        super().__init__(message)
 
 
 class AccountLockedException(PetAidError):

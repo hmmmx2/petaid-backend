@@ -1,7 +1,11 @@
-"""Seed demo data — Alwin (Pet Owner) and Dr. Kavitha (Vet Expert).
+"""Seed demo data — mirrors the reference prototype's core/90-seed.js.
 
-Idempotent: re-running is safe. The scenarios in SRS Section 7 can be
-walked through end-to-end against the data this script lays down.
+Idempotent: re-running is safe. All eight SRS §7 scenarios can be walked
+through end-to-end against the data this lays down.
+
+Demo accounts (pre-verified):
+    Pet Owner    alwin@petaid.com   / pet123
+    Vet Expert   kavitha@petaid.com / vet123   (MFA 123456)
 
 Usage:
     python -m app.seed
@@ -31,10 +35,10 @@ from app.models.resource import Resource, ResourceStatus
 logger = logging.getLogger("petaid.seed")
 logging.basicConfig(level=logging.INFO)
 
-OWNER_EMAIL = "alwin@petaid.local"
-OWNER_PASSWORD = "petaid-demo-2026"
-VET_EMAIL = "vet@petaid.local"
-VET_PASSWORD = "petaid-vet-2026"
+OWNER_EMAIL = "alwin@petaid.com"
+OWNER_PASSWORD = "pet123"
+VET_EMAIL = "kavitha@petaid.com"
+VET_PASSWORD = "vet123"
 VET_MFA_CODE = "123456"
 
 
@@ -62,10 +66,10 @@ async def seed() -> None:
 
         # --- Actors ---------------------------------------------------- #
         owner = PetOwner(
-            full_name="Alwin Tay", initials="AT", email_verified=True
+            full_name="Alwin Jing Xue Tay", initials="AT", email_verified=True
         )
         vet = VeterinaryExpert(
-            full_name="Dr. Kavitha Subramaniam", initials="KS", email_verified=True
+            full_name="Kavitha Subramaniam", initials="KS", email_verified=True
         )
         db.add_all([owner, vet])
         await db.flush()
@@ -88,202 +92,212 @@ async def seed() -> None:
         )
 
         # --- Pet Types ------------------------------------------------- #
-        pt_dog = PetType(name="Dog", icon_emoji="🐕", icon_bg="#E1F5EE", sort_order=1)
-        pt_cat = PetType(name="Cat", icon_emoji="🐈", icon_bg="#FDECEA", sort_order=2)
-        pt_rabbit = PetType(name="Rabbit", icon_emoji="🐇", icon_bg="#FAEEDA", sort_order=3)
+        pt_dog = PetType(name="Dog", description="Canine companions",
+                         icon_emoji="🐕", icon_bg="#FEE3D8", sort_order=1)
+        pt_cat = PetType(name="Cat", description="Feline companions",
+                         icon_emoji="🐈", icon_bg="#F8EDCF", sort_order=2)
+        pt_rabbit = PetType(name="Rabbit", description="Domestic rabbits",
+                            icon_emoji="🐇", icon_bg="#ECECEC", sort_order=3)
         db.add_all([pt_dog, pt_cat, pt_rabbit])
         await db.flush()
 
-        # --- Pets (aggregated by Alwin) -------------------------------- #
+        # --- Pets ------------------------------------------------------ #
         pets = [
-            Pet(owner_id=owner.id, pet_type_id=pt_dog.id, name="Mochi", breed="Golden", age_years=3),
-            Pet(owner_id=owner.id, pet_type_id=pt_cat.id, name="Luna", breed="Tabby", age_years=2),
-            Pet(owner_id=owner.id, pet_type_id=pt_rabbit.id, name="Biscuit", breed="Holland Lop", age_years=1),
+            Pet(owner_id=owner.id, pet_type_id=pt_dog.id, name="Mochi",
+                breed="Golden Retriever", age_years=3,
+                health_notes="Friendly; mild hip sensitivity."),
+            Pet(owner_id=owner.id, pet_type_id=pt_cat.id, name="Luna",
+                breed="Tabby", age_years=2, health_notes="Indoor only."),
+            Pet(owner_id=owner.id, pet_type_id=pt_rabbit.id, name="Biscuit",
+                breed="Holland Lop", age_years=1, health_notes=""),
         ]
         db.add_all(pets)
 
-        # --- Resources (published by the vet) -------------------------- #
-        r_cpr = Resource(
-            pet_type_id=pt_dog.id, author_id=vet.id,
-            title="Dog CPR Step-by-Step Video", content_type="video",
-            media_path="https://media.petaid.local/dog-cpr.mp4",
-            status=ResourceStatus.PUBLISHED,
-        )
-        r_poison = Resource(
-            pet_type_id=pt_cat.id, author_id=vet.id,
-            title="Cat Poisoning Guide", content_type="pdf",
-            media_path="https://media.petaid.local/cat-poisoning.pdf",
-            status=ResourceStatus.PUBLISHED,
-        )
-        r_wound = Resource(
-            pet_type_id=pt_rabbit.id, author_id=vet.id,
-            title="Rabbit Wound Care Images", content_type="images",
-            media_path="https://media.petaid.local/rabbit-wound.png",
-            status=ResourceStatus.DRAFT,  # left in draft for the approval scenario
-        )
-        db.add_all([r_cpr, r_poison, r_wound])
+        # --- Resources (4 published, 1 draft) -------------------------- #
+        r_cpr = Resource(pet_type_id=pt_dog.id, author_id=vet.id,
+                         title="Dog CPR Step-by-Step (Video)", content_type="video",
+                         media_path="https://media.petaid.app/dog-cpr.mp4",
+                         status=ResourceStatus.PUBLISHED)
+        r_poison = Resource(pet_type_id=pt_cat.id, author_id=vet.id,
+                            title="Cat Poisoning Reference Guide", content_type="pdf",
+                            media_path="https://media.petaid.app/cat-poisoning.pdf",
+                            status=ResourceStatus.PUBLISHED)
+        r_wound = Resource(pet_type_id=pt_rabbit.id, author_id=vet.id,
+                           title="Rabbit Wound Care Photo Set", content_type="images",
+                           media_path="https://media.petaid.app/rabbit-wound.png",
+                           status=ResourceStatus.PUBLISHED)
+        r_heat = Resource(pet_type_id=pt_dog.id, author_id=vet.id,
+                          title="Heat-Stroke Triage Reference", content_type="pdf",
+                          media_path="https://media.petaid.app/heatstroke.pdf",
+                          status=ResourceStatus.PUBLISHED)
+        r_bee = Resource(pet_type_id=pt_dog.id, author_id=vet.id,
+                         title="Bee-Sting Response Draft", content_type="pdf",
+                         media_path="https://media.petaid.app/bee-sting.pdf",
+                         status=ResourceStatus.DRAFT)
+        db.add_all([r_cpr, r_poison, r_wound, r_heat, r_bee])
         await db.flush()
 
-        # --- First Aid Guidance ---------------------------------------- #
+        # --- First Aid Guidance (5 protocols) -------------------------- #
         guidance = [
             FirstAidGuidance(
                 pet_type_id=pt_dog.id, author_id=vet.id,
-                title="Dog Choking — Emergency Protocol",
-                emergency_type="Choking",
-                summary="Quick airway clearance for a choking dog.",
+                title="Dog CPR — Basic Compression", emergency_type="cardiac",
+                summary="Restart circulation for a dog in cardiac arrest.",
                 steps=[
-                    "Stay calm and keep the dog still.",
-                    "Open the mouth gently and check for visible obstruction.",
-                    "If visible, sweep with a finger — do not push the object deeper.",
-                    "Perform back blows between shoulder blades up to five times.",
-                    "If unconscious, begin CPR and call emergency vet immediately.",
+                    "Place dog on a firm flat surface, right side down.",
+                    "Locate the heart just behind the elbow on the left side.",
+                    "Compress the chest one-third its width at 100–120 compressions per minute.",
+                    "After 30 compressions, give 2 rescue breaths through the nose.",
+                    "Continue cycles until a vet takes over or breathing resumes.",
                 ],
+                resources=[r_cpr],
             ),
             FirstAidGuidance(
                 pet_type_id=pt_cat.id, author_id=vet.id,
-                title="Cat Poisoning — First Response",
-                emergency_type="Poisoning",
-                summary="Stabilise the cat before transport to the clinic.",
+                title="Suspected Poisoning — Cat", emergency_type="poisoning",
+                summary="Stabilise a cat that may have ingested a toxin.",
                 steps=[
-                    "Identify and remove the toxic substance from reach.",
-                    "Note packaging or remaining material to bring to the vet.",
-                    "Do not induce vomiting unless instructed by a vet.",
-                    "Keep the cat warm and quiet during transport.",
-                    "Call the emergency vet line for product-specific guidance.",
+                    "Identify the substance if possible. Save the packaging.",
+                    "Do NOT induce vomiting unless explicitly advised by a vet.",
+                    "Call the ASPCA poison line: 1-888-426-4435.",
+                    "Keep the cat warm, calm, and contained.",
+                    "Take the substance label with you to the clinic.",
+                ],
+                resources=[r_poison],
+            ),
+            FirstAidGuidance(
+                pet_type_id=pt_dog.id, author_id=vet.id,
+                title="Bleeding Wound — Pressure & Bandage", emergency_type="bleeding",
+                summary="Control external bleeding before transport.",
+                steps=[
+                    "Apply direct firm pressure with a clean cloth.",
+                    "Elevate the limb above heart level if no fracture is suspected.",
+                    "Maintain pressure for at least 3 minutes without lifting.",
+                    "Wrap with gauze and self-adhering bandage; do not over-tighten.",
+                    "Transport to a vet if bleeding persists beyond 5 minutes.",
+                ],
+                resources=[r_wound],
+            ),
+            FirstAidGuidance(
+                pet_type_id=pt_dog.id, author_id=vet.id,
+                title="Heat Stroke Cooling Protocol", emergency_type="heatstroke",
+                summary="Cool an overheated dog safely.",
+                steps=[
+                    "Move to a cool, shaded area immediately.",
+                    "Wet fur with cool (not cold) water.",
+                    "Direct a fan at the wet body.",
+                    "Offer small amounts of cool water — do not force.",
+                    "Transport to a vet even if recovery appears complete.",
+                ],
+                resources=[r_heat],
+            ),
+            FirstAidGuidance(
+                pet_type_id=pt_dog.id, author_id=vet.id,
+                title="Choking — Heimlich for Dogs", emergency_type="choking",
+                summary="Clear an airway obstruction in a choking dog.",
+                steps=[
+                    "Open the mouth and look for a visible obstruction.",
+                    "Sweep finger only if object is clearly reachable.",
+                    "For small dogs: hold upside down, sharp pats between shoulder blades.",
+                    "For large dogs: stand behind, squeeze just below the rib cage upward.",
+                    "Re-check airway after each attempt.",
                 ],
             ),
         ]
         db.add_all(guidance)
         await db.flush()
-        guidance[0].resources.append(r_cpr)
-        guidance[1].resources.append(r_poison)
 
         # --- Quizzes --------------------------------------------------- #
         quiz_cpr = Quiz(
-            resource_id=r_cpr.id,
-            title="Dog CPR Basics",
-            passing_score=60,
+            resource_id=r_cpr.id, title="Dog CPR Basics", passing_score=70,
             questions=[
-                {
-                    "prompt": "How often should you perform compressions per minute?",
-                    "options": ["30-50", "60-80", "100-120", "150-180"],
-                    "answer_index": 2,
-                },
-                {
-                    "prompt": "Where should you place your hands for a medium-sized dog?",
-                    "options": [
-                        "Over the abdomen",
-                        "Highest point of the chest",
-                        "On the neck",
-                        "On the spine",
-                    ],
-                    "answer_index": 1,
-                },
-                {
-                    "prompt": "When should you call the emergency vet?",
-                    "options": [
-                        "Only if compressions fail",
-                        "Immediately, while administering CPR",
-                        "After 30 minutes of CPR",
-                        "Never — handle it yourself",
-                    ],
-                    "answer_index": 1,
-                },
+                {"prompt": "How many compressions per minute?",
+                 "options": ["60–80", "100–120", "160–180"], "answer_index": 1},
+                {"prompt": "When can you stop CPR?",
+                 "options": ["After 1 minute", "Vet takes over or breathing returns", "Never"],
+                 "answer_index": 1},
+                {"prompt": "Where do you compress?",
+                 "options": ["Centre of belly", "Behind elbow, left side", "Right hip"],
+                 "answer_index": 1},
             ],
         )
         quiz_poison = Quiz(
-            resource_id=r_poison.id,
-            title="Cat Poisoning Response",
-            passing_score=60,
+            resource_id=r_poison.id, title="Cat Poisoning Triage", passing_score=70,
             questions=[
-                {
-                    "prompt": "Should you induce vomiting if a cat ingested chocolate?",
-                    "options": ["Always", "Only with vet instruction", "Never", "If under 5 minutes"],
-                    "answer_index": 1,
-                },
-                {
-                    "prompt": "What should you bring with you to the clinic?",
-                    "options": ["Toys", "Packaging of the toxin", "Litter box", "Food bowl"],
-                    "answer_index": 1,
-                },
+                {"prompt": "Should you induce vomiting first?",
+                 "options": ["Always", "Only if vet directs", "Never if alkaline"],
+                 "answer_index": 1},
+                {"prompt": "What should you bring to the clinic?",
+                 "options": ["Just the cat", "Cat + substance packaging", "Nothing"],
+                 "answer_index": 1},
             ],
         )
-        db.add_all([quiz_cpr, quiz_poison])
+        quiz_heat = Quiz(
+            resource_id=r_heat.id, title="Heat-Stroke Response", passing_score=70,
+            questions=[
+                {"prompt": "What temperature water do you use?",
+                 "options": ["Ice cold", "Cool", "Warm"], "answer_index": 1},
+                {"prompt": "Can you skip the vet if your dog seems fine?",
+                 "options": ["Yes", "No — always go in"], "answer_index": 1},
+            ],
+        )
+        db.add_all([quiz_cpr, quiz_poison, quiz_heat])
         await db.flush()
 
-        # --- Quiz attempts (so the dashboard shows real numbers) ------- #
-        rng_scores = [55, 68, 74, 78, 82, 88, 92]
-        for i, score in enumerate(rng_scores):
-            db.add(
-                QuizAttempt(
-                    pet_owner_id=owner.id,
-                    quiz_id=quiz_cpr.id if i % 2 == 0 else quiz_poison.id,
-                    score_pct=score,
-                    passed=score >= 60,
-                    answers=[1, 1, 1],
-                    completed_at=now - timedelta(days=(7 - i) * 5),
-                )
-            )
+        # --- Quiz attempts --------------------------------------------- #
+        db.add(QuizAttempt(pet_owner_id=owner.id, quiz_id=quiz_cpr.id,
+                           score_pct=100, passed=True, answers=[1, 1, 1],
+                           completed_at=now - timedelta(days=7)))
+        db.add(QuizAttempt(pet_owner_id=owner.id, quiz_id=quiz_poison.id,
+                           score_pct=80, passed=True, answers=[1, 1],
+                           completed_at=now - timedelta(days=2)))
 
-        # --- Inquiry --------------------------------------------------- #
-        db.add(
-            Inquiry(
-                pet_owner_id=owner.id,
-                subject="Luna seems lethargic — non-urgent",
-                question="Luna has been sleeping more than usual for the last 3 days. "
-                "Eating fine. Should I be worried?",
-                status=InquiryStatus.PENDING,
-                submitted_at=now - timedelta(hours=6),
-            )
+        # --- Inquiries: one responded, one pending --------------------- #
+        responded = Inquiry(
+            pet_owner_id=owner.id, assigned_vet_id=vet.id,
+            subject="Mochi licking paw pad",
+            question="Mochi has been licking his paw pad. Should I bandage it?",
+            response="Apply a thin layer of pet-safe antiseptic ointment twice daily. "
+            "If swelling appears within 48h, bring him in for a check.",
+            status=InquiryStatus.RESPONDED,
+            submitted_at=now - timedelta(days=3),
+            responded_at=now - timedelta(days=2),
         )
+        pending = Inquiry(
+            pet_owner_id=owner.id,
+            subject="Luna refused dinner",
+            question="Luna refused dinner tonight, is this serious?",
+            status=InquiryStatus.PENDING,
+            submitted_at=now - timedelta(hours=5),
+        )
+        db.add_all([responded, pending])
 
         # --- Chat ------------------------------------------------------ #
-        chat = Chat(
-            pet_owner_id=owner.id,
-            vet_id=vet.id,
+        db.add(Chat(
+            pet_owner_id=owner.id, vet_id=vet.id,
             subject="Quick follow-up on Mochi's paw",
-            status=ChatStatus.ACTIVE,
-            started_at=now - timedelta(hours=2),
-        )
-        db.add(chat)
+            status=ChatStatus.ACTIVE, started_at=now - timedelta(hours=2),
+        ))
 
-        # --- Donation (with composed immutable record) ----------------- #
-        donation = Donation(
-            pet_owner_id=owner.id,
-            amount_cents=2500,
-            currency="USD",
-            status=DonationStatus.SUCCEEDED,
-        )
+        # --- Donation (composed immutable record) ---------------------- #
+        donation = Donation(pet_owner_id=owner.id, amount_cents=2500,
+                            currency="USD", status=DonationStatus.SUCCEEDED)
         db.add(donation)
         await db.flush()
-        db.add(
-            DonationRecord(
-                donation_id=donation.id,
-                transaction_ref="TXN-SEEDED0000001",
-                provider="MockProvider",
-                amount_cents=2500,
-                currency="USD",
-                final_status="succeeded",
-                processed_at=now - timedelta(days=1),
-            )
-        )
+        db.add(DonationRecord(
+            donation_id=donation.id, transaction_ref="TXN-SEEDED0000001",
+            provider="MockProvider", amount_cents=2500, currency="USD",
+            final_status="succeeded", processed_at=now - timedelta(days=1),
+        ))
 
         # --- Feedback (composed entry) --------------------------------- #
-        feedback = Feedback(
-            submitter_id=owner.id,
-            target_type=FeedbackTargetType.RESOURCE,
-            target_id=r_cpr.id,
-            flagged=False,
-        )
+        feedback = Feedback(submitter_id=owner.id,
+                            target_type=FeedbackTargetType.RESOURCE,
+                            target_id=r_cpr.id, flagged=False)
         db.add(feedback)
         await db.flush()
-        db.add(
-            FeedbackEntry(
-                feedback_id=feedback.id,
-                rating=5,
-                comment="Saved Mochi's life — clear, calm steps.",
-            )
-        )
+        db.add(FeedbackEntry(feedback_id=feedback.id, rating=5,
+                             comment="Saved Mochi's life — clear, calm steps."))
 
         await db.commit()
         logger.info("Seed complete.")

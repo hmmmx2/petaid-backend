@@ -14,6 +14,7 @@ mutate :class:`UserCredentials` (heuristic 4.1.2, data hiding).
 """
 from __future__ import annotations
 
+import secrets
 from datetime import datetime, timedelta, timezone
 
 from passlib.context import CryptContext
@@ -30,11 +31,13 @@ from app.domain.exceptions import (
 from app.models.account import Account, PetOwner, VeterinaryExpert
 from app.models.credentials import UserCredentials
 
-# Tuning constants per SRS 1.3.3
+# Tuning constants per SRS 1.3.3 (mirrors the reference core/20-auth-manager.js)
 MAX_FAILED_ATTEMPTS = 5
 LOCKOUT_SECONDS = 30
-MIN_PASSWORD_LENGTH = 8
-MAX_NAME_LENGTH = 120
+MIN_PASSWORD_LENGTH = 6
+MAX_PASSWORD_LENGTH = 64
+MAX_NAME_LENGTH = 80
+DEMO_MFA_SECRET = "123456"
 
 # Single password context shared by all credential operations.
 _pwd_context = CryptContext(schemes=["bcrypt"], deprecated="auto")
@@ -59,6 +62,10 @@ class AuthManager:
         consume_mfa_token, reset_failed_attempts
     """
 
+    # email (lower) -> 6-digit verification code. In-memory for the prototype
+    # (the reference stores it the same way — SRS A3 allows this simplification).
+    _pending_verifications: dict[str, str] = {}
+
     def __init__(self, event_bus: EventBus) -> None:
         self._event_bus = event_bus
 
@@ -73,17 +80,18 @@ class AuthManager:
         full_name: str,
         email: str,
         password: str,
-    ) -> Account:
-        """Create a new account of the requested ``role``.
+    ) -> tuple[Account, str]:
+        """Create a new (unverified) account and return ``(account, code)``.
 
         ``role`` must be one of ``"pet_owner"`` or ``"veterinary_expert"``.
-        Vet accounts have MFA enabled at creation time (SRS A1).
+        Vet accounts have MFA enabled at creation time (SRS A1). A 6-digit
+        email-verification code is generated and returned so the SRS §7.8
+        flow can complete; the account stays inactive for login until the
+        code is confirmed.
         """
         self._validate_input(full_name=full_name, email=email, password=password)
         email = email.strip().lower()
 
-        # Uniqueness check via the credentials table — the only place email
-        # is stored.
         existing = await db.scalar(
             select(UserCredentials).where(UserCredentials.email == email)
         )
@@ -91,6 +99,7 @@ class AuthManager:
             raise InvalidInputException("email", "An account with this email already exists.")
 
         account = self._make_account(role=role, full_name=full_name)
+        account.email_verified = False
         db.add(account)
         await db.flush()  # need account.id for FK
 
@@ -99,10 +108,36 @@ class AuthManager:
             email=email,
             hashed_password=_pwd_context.hash(password),
             mfa_enabled=isinstance(account, VeterinaryExpert),
+            mfa_secret=DEMO_MFA_SECRET if isinstance(account, VeterinaryExpert) else None,
         )
         db.add(creds)
         await db.commit()
         await db.refresh(account)
+
+        code = f"{secrets.randbelow(900000) + 100000}"
+        self._pending_verifications[email] = code
+        return account, code
+
+    async def confirm_email_verification(
+        self, db: AsyncSession, *, email: str, code: str
+    ) -> Account:
+        """Mark an account's email verified once the right code is supplied."""
+        email = email.strip().lower()
+        expected = self._pending_verifications.get(email)
+        if not expected or expected != code.strip():
+            raise InvalidInputException("code", "Verification code is incorrect.")
+        creds = await db.scalar(
+            select(UserCredentials).where(UserCredentials.email == email)
+        )
+        if creds is None:
+            raise InvalidInputException("email", "Account not found.")
+        account = await db.get(Account, creds.account_id)
+        if account is None:
+            raise InvalidInputException("email", "Account not found.")
+        account.email_verified = True
+        await db.commit()
+        await db.refresh(account)
+        self._pending_verifications.pop(email, None)
         return account
 
     @staticmethod
@@ -149,6 +184,11 @@ class AuthManager:
         account = await db.get(Account, creds.account_id)
         if account is None or not account.is_active:
             raise InvalidCredentialsException()
+
+        if not account.email_verified:
+            raise InvalidCredentialsException(
+                "Please verify your email before signing in."
+            )
 
         if creds.mfa_enabled and not self._mfa_ok(creds, mfa_token):
             raise MfaRequiredException()
@@ -213,4 +253,9 @@ class AuthManager:
             raise InvalidInputException(
                 "password",
                 f"Password must be at least {MIN_PASSWORD_LENGTH} characters.",
+            )
+        if len(password) > MAX_PASSWORD_LENGTH:
+            raise InvalidInputException(
+                "password",
+                f"Password must be at most {MAX_PASSWORD_LENGTH} characters.",
             )
