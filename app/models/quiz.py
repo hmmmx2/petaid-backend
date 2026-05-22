@@ -45,24 +45,51 @@ class Quiz(UUIDPkMixin, TimestampMixin, Base):
     # ------------------------------------------------------------------ #
     # Behaviour — Quiz scores its own attempts (SRS 4.1.4)               #
     # ------------------------------------------------------------------ #
-    def evaluate(self, answers: list[int]) -> tuple[int, bool]:
-        """Return ``(score_pct, passed)`` for the supplied answer indices.
+    def evaluate(self, answers: list[int]) -> tuple[int, bool, list[dict]]:
+        """Return ``(score_pct, passed, per_question)`` for the answer indices.
 
-        ``answers`` must be the same length as :attr:`questions`. Out-of-
-        range or missing answers are counted as wrong, never as an error,
-        so the UI can always render a score.
+        ``answers`` should be the same length as :attr:`questions` (the API
+        layer validates this); out-of-range or missing answers are counted as
+        wrong, never as an error, so the UI can always render a result.
+
+        ``per_question`` is a list of ``{prompt, ok, given, correct}`` dicts
+        (option *text*, not indices) so the client can render per-question
+        feedback directly without re-deriving option labels.
         """
         if not self.questions:
-            return 0, False
-        correct = 0
-        for q, a in zip(self.questions, answers):
+            return 0, False, []
+
+        def _opt(options: list, idx) -> str | None:
+            if idx is None:
+                return None
             try:
-                if int(a) == int(q["answer_index"]):
-                    correct += 1
-            except (KeyError, TypeError, ValueError):
-                continue
+                i = int(idx)
+            except (TypeError, ValueError):
+                return None
+            return options[i] if 0 <= i < len(options) else None
+
+        correct = 0
+        per_question: list[dict] = []
+        for i, q in enumerate(self.questions):
+            options = list(q.get("options", []))
+            correct_index = q.get("answer_index")
+            given_index = answers[i] if i < len(answers) else None
+            try:
+                ok = given_index is not None and int(given_index) == int(correct_index)
+            except (TypeError, ValueError):
+                ok = False
+            if ok:
+                correct += 1
+            per_question.append(
+                {
+                    "prompt": q.get("prompt", ""),
+                    "ok": ok,
+                    "given": _opt(options, given_index),
+                    "correct": _opt(options, correct_index),
+                }
+            )
         score = round(correct * 100 / len(self.questions))
-        return score, score >= self.passing_score
+        return score, score >= self.passing_score, per_question
 
 
 class QuizAttempt(UUIDPkMixin, TimestampMixin, Base):

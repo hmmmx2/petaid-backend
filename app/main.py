@@ -18,6 +18,7 @@ from contextlib import asynccontextmanager
 from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
+from sqlalchemy.exc import InterfaceError, OperationalError
 
 from app.api.v1 import api_router
 from app.core.config import get_settings
@@ -74,6 +75,26 @@ def create_app() -> FastAPI:
         if (retry := getattr(exc, "retry_after_seconds", None)) is not None:
             body["retry_after_seconds"] = retry
         return JSONResponse(status_code=exc.http_status, content=body)
+
+    async def _db_unavailable_handler(_: Request, exc: Exception) -> JSONResponse:
+        """Return a clean 503 when the database is unreachable.
+
+        Without this, a connection failure (DB down, network blip, pool
+        exhaustion) bubbles up as an opaque 500 ``Internal Server Error``.
+        A 503 lets the client show a "temporarily unavailable, retry" message
+        instead of a generic crash.
+        """
+        logger.error("Database unavailable: %s", exc)
+        return JSONResponse(
+            status_code=503,
+            content={
+                "code": "service_unavailable",
+                "detail": "The service is temporarily unavailable. Please try again in a moment.",
+            },
+        )
+
+    app.add_exception_handler(OperationalError, _db_unavailable_handler)
+    app.add_exception_handler(InterfaceError, _db_unavailable_handler)
 
     app.include_router(api_router)
 

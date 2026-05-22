@@ -103,6 +103,15 @@ class QuizAttemptIn(BaseModel):
     answers: list[int]
 
 
+class QuizPerQuestion(BaseModel):
+    """Per-question feedback returned after grading (option *text*)."""
+
+    prompt: str
+    ok: bool
+    given: str | None = None
+    correct: str | None = None
+
+
 class QuizAttemptOut(BaseModel):
     model_config = ConfigDict(from_attributes=True)
 
@@ -111,6 +120,7 @@ class QuizAttemptOut(BaseModel):
     score_pct: int
     passed: bool
     completed_at: datetime
+    per_question: list[QuizPerQuestion] = []
 
 
 class InquiryIn(BaseModel):
@@ -165,7 +175,7 @@ class ChatOut(BaseModel):
 
 class DonationIn(BaseModel):
     amount_cents: int = Field(ge=100, le=1_000_000_00)
-    currency: str = Field(default="USD", pattern=r"^[A-Z]{3}$")
+    currency: str = Field(default="MYR", pattern=r"^[A-Z]{3}$")
     recurring: bool = False
 
 
@@ -175,6 +185,7 @@ class DonationOut(BaseModel):
     id: uuid.UUID
     amount_cents: int
     currency: str
+    recurring: bool
     status: str
     transaction_ref: str | None
     processed_at: datetime | None

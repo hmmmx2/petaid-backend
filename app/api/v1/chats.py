@@ -40,7 +40,10 @@ async def start_chat(
     )
     db.add(chat)
     await db.commit()
-    await db.refresh(chat)
+    # Eager-load `messages` inside the async session: ChatOut serializes the
+    # relationship, and a lazy-load during Pydantic serialization runs outside
+    # the greenlet → MissingGreenlet/500. A fresh chat just yields an empty list.
+    await db.refresh(chat, attribute_names=["messages"])
 
     get_app_controller().event_bus.publish(
         DomainEvent(channel=CH_CHAT_INITIATED, payload={"chat_id": str(chat.id)})
@@ -58,7 +61,7 @@ async def join_chat(chat_id: uuid.UUID, vet: CurrentVetDep, db: DbDep) -> Chat:
     except ValueError as exc:
         raise InvalidInputException("status", str(exc)) from exc
     await db.commit()
-    await db.refresh(chat)
+    await db.refresh(chat, attribute_names=["messages"])
     return chat
 
 
@@ -140,7 +143,7 @@ async def close_chat(
     _assert_participant(chat, account)
     chat.close()
     await db.commit()
-    await db.refresh(chat)
+    await db.refresh(chat, attribute_names=["messages"])
 
     get_app_controller().event_bus.publish(
         DomainEvent(channel=CH_CHAT_CLOSED, payload={"chat_id": str(chat.id)})

@@ -8,7 +8,7 @@ from fastapi import APIRouter, status
 from sqlalchemy import select
 
 from app.api.deps import CurrentAccountDep, CurrentPetOwnerDep, CurrentVetDep, DbDep
-from app.domain.exceptions import NotFoundException
+from app.domain.exceptions import InvalidInputException, NotFoundException
 from app.models.quiz import Quiz, QuizAttempt
 from app.schemas.common import (
     QuizAttemptIn,
@@ -54,6 +54,30 @@ async def list_quizzes(
     return [_to_out(q) for q in rows]
 
 
+@router.get("/attempts", response_model=list[QuizAttemptOut])
+async def list_my_attempts(owner: CurrentPetOwnerDep, db: DbDep) -> list[QuizAttemptOut]:
+    """The signed-in Pet Owner's own quiz attempts (newest first).
+
+    Declared before ``/{quiz_id}`` so the literal path isn't parsed as a UUID.
+    Used by the dashboard to show a per-quiz best score.
+    """
+    rows = await db.scalars(
+        select(QuizAttempt)
+        .where(QuizAttempt.pet_owner_id == owner.id)
+        .order_by(QuizAttempt.completed_at.desc())
+    )
+    return [
+        QuizAttemptOut(
+            id=a.id,
+            quiz_id=a.quiz_id,
+            score_pct=a.score_pct,
+            passed=a.passed,
+            completed_at=a.completed_at,
+        )
+        for a in rows
+    ]
+
+
 @router.get("/{quiz_id}", response_model=QuizOut)
 async def get_quiz(
     quiz_id: uuid.UUID, _account: CurrentAccountDep, db: DbDep
@@ -88,12 +112,23 @@ async def submit_attempt(
     payload: QuizAttemptIn,
     owner: CurrentPetOwnerDep,
     db: DbDep,
-) -> QuizAttempt:
-    """Score the attempt via :meth:`Quiz.evaluate` (SRS 4.1.4)."""
+) -> QuizAttemptOut:
+    """Score the attempt via :meth:`Quiz.evaluate` (SRS 4.1.4).
+
+    The submission must answer every question exactly once — a partial answer
+    list is rejected rather than silently scored as wrong, so a truncated or
+    malformed request never produces a misleading score.
+    """
     quiz = await db.get(Quiz, quiz_id)
     if quiz is None:
         raise NotFoundException("Quiz")
-    score, passed = quiz.evaluate(payload.answers)
+    expected = len(quiz.questions)
+    if len(payload.answers) != expected:
+        raise InvalidInputException(
+            "answers",
+            f"Expected {expected} answer(s) but received {len(payload.answers)}.",
+        )
+    score, passed, per_question = quiz.evaluate(payload.answers)
     attempt = QuizAttempt(
         pet_owner_id=owner.id,
         quiz_id=quiz.id,
@@ -105,4 +140,11 @@ async def submit_attempt(
     db.add(attempt)
     await db.commit()
     await db.refresh(attempt)
-    return attempt
+    return QuizAttemptOut(
+        id=attempt.id,
+        quiz_id=attempt.quiz_id,
+        score_pct=attempt.score_pct,
+        passed=attempt.passed,
+        completed_at=attempt.completed_at,
+        per_question=per_question,
+    )

@@ -38,6 +38,7 @@ MIN_PASSWORD_LENGTH = 6
 MAX_PASSWORD_LENGTH = 64
 MAX_NAME_LENGTH = 80
 DEMO_MFA_SECRET = "123456"
+RESEND_COOLDOWN_SECONDS = 30  # min gap between verification-code re-sends
 
 # Single password context shared by all credential operations.
 _pwd_context = CryptContext(schemes=["bcrypt"], deprecated="auto")
@@ -65,6 +66,8 @@ class AuthManager:
     # email (lower) -> 6-digit verification code. In-memory for the prototype
     # (the reference stores it the same way — SRS A3 allows this simplification).
     _pending_verifications: dict[str, str] = {}
+    # email (lower) -> last time a verification code was issued (rate-limiting).
+    _last_verification_sent: dict[str, datetime] = {}
 
     def __init__(self, event_bus: EventBus) -> None:
         self._event_bus = event_bus
@@ -125,7 +128,43 @@ class AuthManager:
 
         code = f"{secrets.randbelow(900000) + 100000}"
         self._pending_verifications[email] = code
+        self._last_verification_sent[email] = datetime.now(timezone.utc)
         return account, code
+
+    async def resend_verification(
+        self, db: AsyncSession, *, email: str
+    ) -> str | None:
+        """Re-issue a verification code for an unverified account.
+
+        Returns the new 6-digit code, or ``None`` when there is nothing to
+        resend (no such account, or it's already verified). Returning ``None``
+        rather than raising lets the endpoint respond identically in every case
+        and avoids leaking which emails are registered (account enumeration).
+
+        Rate-limited per email via :data:`RESEND_COOLDOWN_SECONDS`.
+        """
+        email = email.strip().lower()
+        creds = await db.scalar(
+            select(UserCredentials).where(UserCredentials.email == email)
+        )
+        if creds is None:
+            return None
+        account = await db.get(Account, creds.account_id)
+        if account is None or account.email_verified:
+            return None
+
+        now = datetime.now(timezone.utc)
+        last = self._last_verification_sent.get(email)
+        if last is not None and (now - last).total_seconds() < RESEND_COOLDOWN_SECONDS:
+            remaining = int(RESEND_COOLDOWN_SECONDS - (now - last).total_seconds())
+            raise InvalidInputException(
+                "email", f"Please wait {max(remaining, 1)}s before requesting another code."
+            )
+
+        code = f"{secrets.randbelow(900000) + 100000}"
+        self._pending_verifications[email] = code
+        self._last_verification_sent[email] = now
+        return code
 
     async def confirm_email_verification(
         self, db: AsyncSession, *, email: str, code: str

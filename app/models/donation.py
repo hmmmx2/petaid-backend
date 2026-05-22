@@ -38,7 +38,7 @@ class Donation(UUIDPkMixin, TimestampMixin, Base):
     )
 
     amount_cents: Mapped[int] = mapped_column(Integer, nullable=False)
-    currency: Mapped[str] = mapped_column(String(3), nullable=False, default="USD")
+    currency: Mapped[str] = mapped_column(String(3), nullable=False, default="MYR")
     status: Mapped[DonationStatus] = mapped_column(
         Enum(DonationStatus, native_enum=False),
         nullable=False,

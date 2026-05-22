@@ -35,6 +35,10 @@ class VerifyEmailRequest(BaseModel):
     code: str = Field(min_length=4, max_length=8)
 
 
+class ResendVerificationRequest(BaseModel):
+    email: EmailStr
+
+
 class LoginRequest(BaseModel):
     email: EmailStr
     password: str

@@ -21,6 +21,7 @@ from app.schemas.auth import (
     RefreshRequest,
     RegisterRequest,
     RegisterResponse,
+    ResendVerificationRequest,
     TokenPair,
     VerifyEmailRequest,
 )
@@ -60,6 +61,26 @@ async def register(payload: RegisterRequest, db: DbDep) -> RegisterResponse:
     # mail server locally.
     exposed_code = None if get_settings().is_production else code
     return RegisterResponse(email=payload.email.lower(), verification_code=exposed_code)
+
+
+@router.post("/resend-verification", response_model=RegisterResponse)
+async def resend_verification(
+    payload: ResendVerificationRequest, db: DbDep
+) -> RegisterResponse:
+    """Re-issue an email verification code (rate-limited).
+
+    Always responds 200 with the same shape whether or not the email maps to
+    an unverified account — this avoids account enumeration. As with register,
+    the code is surfaced only outside production.
+    """
+    controller = get_app_controller()
+    code = await controller.auth_manager.resend_verification(db, email=payload.email)
+    exposed_code = None if get_settings().is_production else code
+    return RegisterResponse(
+        email=payload.email.lower(),
+        verification_code=exposed_code,
+        message="If the email matches an unverified account, a new code was sent.",
+    )
 
 
 @router.post("/verify-email", response_model=TokenPair)

@@ -10,7 +10,11 @@ from sqlalchemy import or_, select
 from app.api.deps import CurrentAccountDep, CurrentPetOwnerDep, CurrentVetDep, DbDep
 from app.domain.app_controller import get_app_controller
 from app.domain.events import CH_INQUIRY_RESPONDED, CH_INQUIRY_SUBMITTED, DomainEvent
-from app.domain.exceptions import InvalidInputException, NotFoundException
+from app.domain.exceptions import (
+    InvalidInputException,
+    NotAuthorisedException,
+    NotFoundException,
+)
 from app.models.account import PetOwner, VeterinaryExpert
 from app.models.inquiry import Inquiry, InquiryStatus
 from app.schemas.common import InquiryIn, InquiryOut, InquiryResponseIn
@@ -88,11 +92,21 @@ async def respond_inquiry(
 
 @router.post("/{inquiry_id}/close", response_model=InquiryOut)
 async def close_inquiry(
-    inquiry_id: uuid.UUID, _account: CurrentAccountDep, db: DbDep
+    inquiry_id: uuid.UUID, account: CurrentAccountDep, db: DbDep
 ) -> Inquiry:
     inquiry = await db.get(Inquiry, inquiry_id)
     if inquiry is None:
         raise NotFoundException("Inquiry")
+    # Only a participant may close: the pet owner who raised it, or the vet who
+    # was assigned to answer it. Prevents an IDOR where any authenticated
+    # account closes an arbitrary inquiry by guessing its id.
+    is_owner = isinstance(account, PetOwner) and inquiry.pet_owner_id == account.id
+    is_assigned_vet = (
+        isinstance(account, VeterinaryExpert)
+        and inquiry.assigned_vet_id == account.id
+    )
+    if not (is_owner or is_assigned_vet):
+        raise NotAuthorisedException("You cannot close this inquiry.")
     inquiry.close()
     await db.commit()
     await db.refresh(inquiry)
