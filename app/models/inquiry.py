@@ -10,7 +10,7 @@ import uuid
 from datetime import datetime, timezone
 
 from sqlalchemy import DateTime, Enum, ForeignKey, String, Text
-from sqlalchemy.dialects.postgresql import UUID
+from sqlalchemy.dialects.postgresql import JSONB, UUID
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from app.core.database import Base
@@ -51,6 +51,11 @@ class Inquiry(UUIDPkMixin, TimestampMixin, Base):
     subject: Mapped[str] = mapped_column(String(160), nullable=False)
     question: Mapped[str] = mapped_column(Text, nullable=False)
     response: Mapped[str | None] = mapped_column(Text, nullable=True)
+    # Optional photos the owner attaches (e.g. of the pet's condition). Stored
+    # as inline data URLs / remote URLs so the vet can view them with the text.
+    image_urls: Mapped[list[str]] = mapped_column(
+        JSONB, nullable=False, default=list, server_default="[]"
+    )
     status: Mapped[InquiryStatus] = mapped_column(
         Enum(InquiryStatus, native_enum=False),
         nullable=False,

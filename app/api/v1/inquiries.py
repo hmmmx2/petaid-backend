@@ -34,6 +34,7 @@ async def submit_inquiry(
         pet_owner_id=owner.id,
         subject=payload.subject,
         question=payload.question,
+        image_urls=list(payload.images),
         status=InquiryStatus.PENDING,
         submitted_at=datetime.now(timezone.utc),
     )

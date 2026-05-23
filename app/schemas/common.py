@@ -4,7 +4,7 @@ from __future__ import annotations
 import uuid
 from datetime import datetime
 
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import BaseModel, ConfigDict, Field, field_validator
 
 
 class PetTypeOut(BaseModel):
@@ -126,6 +126,27 @@ class QuizAttemptOut(BaseModel):
 class InquiryIn(BaseModel):
     subject: str = Field(min_length=1, max_length=160)
     question: str = Field(min_length=1, max_length=4000)
+    # Optional photos (data URLs or http(s) URLs). Owners typically attach a
+    # downscaled JPEG of their pet's condition.
+    images: list[str] = Field(default_factory=list, max_length=6)
+
+    @field_validator("images")
+    @classmethod
+    def _validate_images(cls, v: list[str]) -> list[str]:
+        MAX_EACH = 2_000_000  # ~2 MB per image (data-URL chars)
+        MAX_TOTAL = 6_000_000
+        total = 0
+        for s in v:
+            if not isinstance(s, str) or not s.strip():
+                raise ValueError("Each image must be a non-empty string.")
+            if not (s.startswith("data:image/") or s.startswith("http://") or s.startswith("https://")):
+                raise ValueError("Images must be image data URLs or http(s) URLs.")
+            if len(s) > MAX_EACH:
+                raise ValueError("An attached image is too large (max ~2 MB each).")
+            total += len(s)
+        if total > MAX_TOTAL:
+            raise ValueError("Attached images exceed the total size limit.")
+        return v
 
 
 class InquiryResponseIn(BaseModel):
@@ -140,6 +161,7 @@ class InquiryOut(BaseModel):
     question: str
     response: str | None
     status: str
+    image_urls: list[str] = []
     submitted_at: datetime
     responded_at: datetime | None
     closed_at: datetime | None
