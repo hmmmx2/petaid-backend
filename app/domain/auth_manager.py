@@ -291,6 +291,21 @@ class AuthManager:
             return None
         return totp.provisioning_uri(creds.mfa_secret, account_name=creds.email)
 
+    async def verify_mfa(
+        self, db: AsyncSession, *, account: Account, code: str
+    ) -> bool:
+        """Check a TOTP ``code`` against the account's enrolled secret.
+
+        Used by the Settings "verify your authenticator works" step. Reading
+        credentials stays inside AuthManager (data-hiding heuristic 4.1.2).
+        """
+        creds = await db.scalar(
+            select(UserCredentials).where(UserCredentials.account_id == account.id)
+        )
+        if creds is None or not creds.mfa_enabled or not creds.mfa_secret:
+            return False
+        return totp.verify(creds.mfa_secret, code)
+
     @staticmethod
     def _enforce_lockout(creds: UserCredentials) -> None:
         if creds.locked_until is None:

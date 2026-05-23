@@ -73,6 +73,10 @@ class ChangePasswordRequest(BaseModel):
     new_password: str = Field(min_length=8, max_length=64)
 
 
+class MfaVerifyRequest(BaseModel):
+    code: str = Field(min_length=4, max_length=8)
+
+
 class MessageResponse(BaseModel):
     """Generic success/info envelope; ``reset_code`` is dev-only (no mail server)."""
 

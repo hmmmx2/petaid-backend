@@ -23,6 +23,7 @@ from app.schemas.auth import (
     ForgotPasswordRequest,
     LoginRequest,
     MessageResponse,
+    MfaVerifyRequest,
     RefreshRequest,
     RegisterRequest,
     RegisterResponse,
@@ -202,6 +203,20 @@ async def mfa_provisioning(vet: CurrentVetDep, db: DbDep) -> dict[str, str | Non
     controller = get_app_controller()
     uri = await controller.auth_manager.get_mfa_provisioning_uri(db, vet)
     return {"otpauth_uri": uri}
+
+
+@router.post(
+    "/mfa/verify",
+    dependencies=[Depends(require(Permission.MFA_ENROLL))],
+)
+async def mfa_verify(payload: MfaVerifyRequest, vet: CurrentVetDep, db: DbDep) -> dict[str, bool]:
+    """Confirm a vet's authenticator is set up correctly (Settings enrolment).
+
+    Checks a TOTP code against the account's own secret; does not change state.
+    """
+    controller = get_app_controller()
+    ok = await controller.auth_manager.verify_mfa(db, account=vet, code=payload.code)
+    return {"verified": ok}
 
 
 @router.post("/refresh", response_model=TokenPair)
