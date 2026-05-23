@@ -4,11 +4,12 @@ from __future__ import annotations
 import uuid
 from datetime import datetime, timezone
 
-from fastapi import APIRouter, status
+from fastapi import APIRouter, Depends, status
 from sqlalchemy import or_, select
 
-from app.api.deps import CurrentAccountDep, CurrentPetOwnerDep, CurrentVetDep, DbDep
+from app.api.deps import CurrentAccountDep, CurrentPetOwnerDep, CurrentVetDep, DbDep, require
 from app.core.rate_limit import enforce
+from app.domain.permissions import Permission
 from app.domain.app_controller import get_app_controller
 from app.domain.events import CH_INQUIRY_RESPONDED, CH_INQUIRY_SUBMITTED, DomainEvent
 from app.domain.exceptions import (
@@ -23,7 +24,7 @@ from app.schemas.common import InquiryIn, InquiryOut, InquiryResponseIn
 router = APIRouter(prefix="/inquiries", tags=["inquiries"])
 
 
-@router.post("", response_model=InquiryOut, status_code=status.HTTP_201_CREATED)
+@router.post("", response_model=InquiryOut, status_code=status.HTTP_201_CREATED, dependencies=[Depends(require(Permission.INQUIRY_CREATE))])
 async def submit_inquiry(
     payload: InquiryIn, owner: CurrentPetOwnerDep, db: DbDep
 ) -> Inquiry:
@@ -49,7 +50,7 @@ async def submit_inquiry(
     return inquiry
 
 
-@router.get("", response_model=list[InquiryOut])
+@router.get("", response_model=list[InquiryOut], dependencies=[Depends(require(Permission.INQUIRY_VIEW))])
 async def list_inquiries(account: CurrentAccountDep, db: DbDep) -> list[Inquiry]:
     """Pet Owners see their own; Vets see pending + their answered."""
     if isinstance(account, PetOwner):
@@ -67,7 +68,7 @@ async def list_inquiries(account: CurrentAccountDep, db: DbDep) -> list[Inquiry]
     return list(rows)
 
 
-@router.post("/{inquiry_id}/respond", response_model=InquiryOut)
+@router.post("/{inquiry_id}/respond", response_model=InquiryOut, dependencies=[Depends(require(Permission.INQUIRY_RESPOND))])
 async def respond_inquiry(
     inquiry_id: uuid.UUID,
     payload: InquiryResponseIn,
@@ -77,6 +78,11 @@ async def respond_inquiry(
     inquiry = await db.get(Inquiry, inquiry_id)
     if inquiry is None:
         raise NotFoundException("Inquiry")
+    # Claim-and-lock: any vet may pick up a still-unassigned inquiry, but once a
+    # vet is assigned only that vet may respond again — closes the IDOR where any
+    # vet could overwrite another's assignment/response.
+    if inquiry.assigned_vet_id is not None and inquiry.assigned_vet_id != vet.id:
+        raise NotAuthorisedException("This inquiry is assigned to another vet.")
     try:
         inquiry.respond(vet_id=vet.id, response_text=payload.response)
     except ValueError as exc:
@@ -93,7 +99,7 @@ async def respond_inquiry(
     return inquiry
 
 
-@router.post("/{inquiry_id}/close", response_model=InquiryOut)
+@router.post("/{inquiry_id}/close", response_model=InquiryOut, dependencies=[Depends(require(Permission.INQUIRY_CLOSE))])
 async def close_inquiry(
     inquiry_id: uuid.UUID, account: CurrentAccountDep, db: DbDep
 ) -> Inquiry:

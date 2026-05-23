@@ -3,12 +3,13 @@ from __future__ import annotations
 
 import uuid
 
-from fastapi import APIRouter, status
+from fastapi import APIRouter, Depends, status
 from sqlalchemy import select
 from sqlalchemy.orm import selectinload
 
-from app.api.deps import CurrentVetDep, DbDep
+from app.api.deps import CurrentVetDep, DbDep, require
 from app.domain.exceptions import NotFoundException
+from app.domain.permissions import Permission
 from app.models.first_aid import FirstAidGuidance
 from app.schemas.common import FirstAidIn, FirstAidOut
 
@@ -42,7 +43,7 @@ async def get_guidance(guidance_id: uuid.UUID, db: DbDep) -> FirstAidGuidance:
     return g
 
 
-@router.post("", response_model=FirstAidOut, status_code=status.HTTP_201_CREATED)
+@router.post("", response_model=FirstAidOut, status_code=status.HTTP_201_CREATED, dependencies=[Depends(require(Permission.GUIDANCE_AUTHOR))])
 async def create_guidance(
     payload: FirstAidIn, vet: CurrentVetDep, db: DbDep
 ) -> FirstAidGuidance:

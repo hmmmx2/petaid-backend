@@ -16,6 +16,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.core.database import get_db
 from app.core.security import decode_token
 from app.domain.exceptions import NotAuthorisedException
+from app.domain.permissions import Permission, has_permission
 from app.models.account import Account, PetOwner, VeterinaryExpert
 
 oauth2_scheme = OAuth2PasswordBearer(tokenUrl="/api/v1/auth/login", auto_error=False)
@@ -74,3 +75,24 @@ async def get_current_vet(account: CurrentAccountDep) -> VeterinaryExpert:
 
 CurrentPetOwnerDep = Annotated[PetOwner, Depends(get_current_pet_owner)]
 CurrentVetDep = Annotated[VeterinaryExpert, Depends(get_current_vet)]
+
+
+def require(*perms: Permission):
+    """Build a dependency that authorises the request against the RBAC matrix.
+
+    Declarative route guard — ``dependencies=[Depends(require(Permission.X))]``.
+    The current account's role must grant *every* listed permission, else a
+    ``NotAuthorisedException`` (403) is raised. This is the single, auditable
+    enforcement point for "may this role do this action"; object-level ownership
+    checks remain in the handlers as the second layer.
+    """
+
+    async def _dependency(account: CurrentAccountDep) -> Account:
+        missing = [p for p in perms if not has_permission(account, p)]
+        if missing:
+            raise NotAuthorisedException(
+                "You are not authorised to perform this action."
+            )
+        return account
+
+    return _dependency

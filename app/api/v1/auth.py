@@ -11,10 +11,11 @@ import uuid
 
 from fastapi import APIRouter, Depends, HTTPException, status
 
-from app.api.deps import CurrentVetDep, DbDep
+from app.api.deps import CurrentAccountDep, CurrentVetDep, DbDep, require
 from app.core.config import get_settings
 from app.core.rate_limit import rate_limit_ip
 from app.core.security import create_token, decode_token
+from app.domain.permissions import Permission, permissions_for
 from app.domain.app_controller import get_app_controller
 from app.models.account import Account
 from app.schemas.auth import (
@@ -122,7 +123,24 @@ async def login(payload: LoginRequest, db: DbDep) -> TokenPair:
     return _issue_tokens(account)
 
 
-@router.get("/mfa/provisioning")
+@router.get("/me")
+async def me(account: CurrentAccountDep) -> dict:
+    """Return the signed-in actor's identity + RBAC capabilities.
+
+    Canonical source of "what may I do" for the client and any middleware.
+    """
+    return {
+        "id": str(account.id),
+        "role": account.role,
+        "full_name": account.full_name,
+        "permissions": [p.value for p in permissions_for(account.role)],
+    }
+
+
+@router.get(
+    "/mfa/provisioning",
+    dependencies=[Depends(require(Permission.MFA_ENROLL))],
+)
 async def mfa_provisioning(vet: CurrentVetDep, db: DbDep) -> dict[str, str | None]:
     """Return the current vet's TOTP enrolment URI (for adding to an
     authenticator app). Only the account's own secret is exposed, and only to

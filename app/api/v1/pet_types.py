@@ -4,11 +4,12 @@ Pet types are read-only for Pet Owners and managed by Veterinary Experts.
 """
 from __future__ import annotations
 
-from fastapi import APIRouter, status
+from fastapi import APIRouter, Depends, status
 from pydantic import BaseModel, Field
 from sqlalchemy import select
 
-from app.api.deps import CurrentVetDep, DbDep
+from app.api.deps import CurrentVetDep, DbDep, require
+from app.domain.permissions import Permission
 from app.models.pet_type import PetType
 from app.schemas.common import PetTypeOut
 
@@ -28,7 +29,7 @@ async def list_pet_types(db: DbDep) -> list[PetType]:
     return list(rows)
 
 
-@router.post("", response_model=PetTypeOut, status_code=status.HTTP_201_CREATED)
+@router.post("", response_model=PetTypeOut, status_code=status.HTTP_201_CREATED, dependencies=[Depends(require(Permission.PET_TYPE_MANAGE))])
 async def create_pet_type(
     payload: PetTypeIn, _vet: CurrentVetDep, db: DbDep
 ) -> PetType:

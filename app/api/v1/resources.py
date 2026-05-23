@@ -3,13 +3,14 @@ from __future__ import annotations
 
 import uuid
 
-from fastapi import APIRouter, status
+from fastapi import APIRouter, Depends, status
 from sqlalchemy import select
 from sqlalchemy.orm import selectinload
 
-from app.api.deps import CurrentAccountDep, CurrentVetDep, DbDep
+from app.api.deps import CurrentAccountDep, CurrentVetDep, DbDep, require
 from app.domain.exceptions import NotFoundException
 from app.domain.media_storage import MediaStorage
+from app.domain.permissions import Permission
 from app.models.account import PetOwner
 from app.models.resource import Resource, ResourceStatus
 from app.schemas.common import ResourceIn, ResourceOut
@@ -18,9 +19,10 @@ router = APIRouter(prefix="/resources", tags=["resources"])
 
 # Stateless — safe to share.
 _media = MediaStorage()
+_resource_manage = [Depends(require(Permission.RESOURCE_MANAGE))]
 
 
-@router.get("", response_model=list[ResourceOut])
+@router.get("", response_model=list[ResourceOut], dependencies=[Depends(require(Permission.RESOURCE_VIEW))])
 async def list_resources(
     account: CurrentAccountDep,
     db: DbDep,
@@ -36,7 +38,7 @@ async def list_resources(
     return list(rows)
 
 
-@router.post("", response_model=ResourceOut, status_code=status.HTTP_201_CREATED)
+@router.post("", response_model=ResourceOut, status_code=status.HTTP_201_CREATED, dependencies=_resource_manage)
 async def create_resource(
     payload: ResourceIn, vet: CurrentVetDep, db: DbDep
 ) -> Resource:
@@ -65,7 +67,7 @@ async def create_resource(
     return resource
 
 
-@router.post("/{resource_id}/publish", response_model=ResourceOut)
+@router.post("/{resource_id}/publish", response_model=ResourceOut, dependencies=_resource_manage)
 async def publish_resource(
     resource_id: uuid.UUID, vet: CurrentVetDep, db: DbDep
 ) -> Resource:

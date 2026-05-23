@@ -8,12 +8,13 @@ from __future__ import annotations
 import uuid
 from datetime import datetime, timezone
 
-from fastapi import APIRouter, status
+from fastapi import APIRouter, Depends, status
 from sqlalchemy import or_, select
 from sqlalchemy.orm import selectinload
 
-from app.api.deps import CurrentAccountDep, CurrentPetOwnerDep, CurrentVetDep, DbDep
+from app.api.deps import CurrentAccountDep, CurrentPetOwnerDep, CurrentVetDep, DbDep, require
 from app.core.rate_limit import enforce
+from app.domain.permissions import Permission
 from app.domain.app_controller import get_app_controller
 from app.domain.events import (
     CH_CHAT_CLOSED,
@@ -29,7 +30,7 @@ from app.schemas.common import ChatIn, ChatMessageIn, ChatMessageOut, ChatOut
 router = APIRouter(prefix="/chats", tags=["chats"])
 
 
-@router.post("", response_model=ChatOut, status_code=status.HTTP_201_CREATED)
+@router.post("", response_model=ChatOut, status_code=status.HTTP_201_CREATED, dependencies=[Depends(require(Permission.CHAT_INITIATE))])
 async def start_chat(
     payload: ChatIn, owner: CurrentPetOwnerDep, db: DbDep
 ) -> Chat:
@@ -54,7 +55,7 @@ async def start_chat(
     return chat
 
 
-@router.post("/{chat_id}/join", response_model=ChatOut)
+@router.post("/{chat_id}/join", response_model=ChatOut, dependencies=[Depends(require(Permission.CHAT_JOIN))])
 async def join_chat(chat_id: uuid.UUID, vet: CurrentVetDep, db: DbDep) -> Chat:
     chat = await db.get(Chat, chat_id)
     if chat is None:
@@ -68,7 +69,7 @@ async def join_chat(chat_id: uuid.UUID, vet: CurrentVetDep, db: DbDep) -> Chat:
     return chat
 
 
-@router.get("", response_model=list[ChatOut])
+@router.get("", response_model=list[ChatOut], dependencies=[Depends(require(Permission.CHAT_VIEW))])
 async def list_chats(account: CurrentAccountDep, db: DbDep) -> list[Chat]:
     if isinstance(account, PetOwner):
         stmt = select(Chat).where(Chat.pet_owner_id == account.id)
@@ -84,7 +85,7 @@ async def list_chats(account: CurrentAccountDep, db: DbDep) -> list[Chat]:
     return list(rows)
 
 
-@router.get("/{chat_id}", response_model=ChatOut)
+@router.get("/{chat_id}", response_model=ChatOut, dependencies=[Depends(require(Permission.CHAT_VIEW))])
 async def get_chat(
     chat_id: uuid.UUID, account: CurrentAccountDep, db: DbDep
 ) -> Chat:
@@ -103,6 +104,7 @@ async def get_chat(
     "/{chat_id}/messages",
     response_model=ChatMessageOut,
     status_code=status.HTTP_201_CREATED,
+    dependencies=[Depends(require(Permission.CHAT_PARTICIPATE))],
 )
 async def post_message(
     chat_id: uuid.UUID,
@@ -138,7 +140,7 @@ async def post_message(
     return message
 
 
-@router.post("/{chat_id}/close", response_model=ChatOut)
+@router.post("/{chat_id}/close", response_model=ChatOut, dependencies=[Depends(require(Permission.CHAT_PARTICIPATE))])
 async def close_chat(
     chat_id: uuid.UUID, account: CurrentAccountDep, db: DbDep
 ) -> Chat:

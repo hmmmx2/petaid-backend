@@ -1,12 +1,13 @@
 """Feedback endpoints (SRS 7.7)."""
 from __future__ import annotations
 
-from fastapi import APIRouter, status
+from fastapi import APIRouter, Depends, status
 from sqlalchemy import select
 from sqlalchemy.orm import selectinload
 
-from app.api.deps import CurrentPetOwnerDep, CurrentVetDep, DbDep
+from app.api.deps import CurrentPetOwnerDep, CurrentVetDep, DbDep, require
 from app.core.rate_limit import enforce
+from app.domain.permissions import Permission
 from app.domain.app_controller import get_app_controller
 from app.domain.events import CH_FEEDBACK_FLAGGED, CH_FEEDBACK_SUBMITTED, DomainEvent
 from app.models.feedback import Feedback, FeedbackEntry, FeedbackTargetType
@@ -27,7 +28,7 @@ def _to_out(f: Feedback) -> FeedbackOut:
     )
 
 
-@router.post("", response_model=FeedbackOut, status_code=status.HTTP_201_CREATED)
+@router.post("", response_model=FeedbackOut, status_code=status.HTTP_201_CREATED, dependencies=[Depends(require(Permission.FEEDBACK_SUBMIT))])
 async def submit_feedback(
     payload: FeedbackIn, owner: CurrentPetOwnerDep, db: DbDep
 ) -> FeedbackOut:
@@ -68,7 +69,7 @@ async def submit_feedback(
     return _to_out(feedback)
 
 
-@router.get("", response_model=list[FeedbackOut])
+@router.get("", response_model=list[FeedbackOut], dependencies=[Depends(require(Permission.FEEDBACK_REVIEW))])
 async def list_feedback(_vet: CurrentVetDep, db: DbDep) -> list[FeedbackOut]:
     rows = await db.scalars(
         select(Feedback)

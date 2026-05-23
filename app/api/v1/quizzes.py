@@ -4,12 +4,13 @@ from __future__ import annotations
 import uuid
 from datetime import datetime, timezone
 
-from fastapi import APIRouter, status
+from fastapi import APIRouter, Depends, status
 from sqlalchemy import select
 
-from app.api.deps import CurrentAccountDep, CurrentPetOwnerDep, CurrentVetDep, DbDep
+from app.api.deps import CurrentAccountDep, CurrentPetOwnerDep, CurrentVetDep, DbDep, require
 from app.core.rate_limit import enforce
 from app.domain.exceptions import InvalidInputException, NotFoundException
+from app.domain.permissions import Permission
 from app.models.quiz import Quiz, QuizAttempt
 from app.schemas.common import (
     QuizAttemptIn,
@@ -42,7 +43,7 @@ def _to_out(q: Quiz) -> QuizOut:
     )
 
 
-@router.get("", response_model=list[QuizOut])
+@router.get("", response_model=list[QuizOut], dependencies=[Depends(require(Permission.QUIZ_VIEW))])
 async def list_quizzes(
     _account: CurrentAccountDep,
     db: DbDep,
@@ -55,7 +56,7 @@ async def list_quizzes(
     return [_to_out(q) for q in rows]
 
 
-@router.get("/attempts", response_model=list[QuizAttemptOut])
+@router.get("/attempts", response_model=list[QuizAttemptOut], dependencies=[Depends(require(Permission.QUIZ_TAKE))])
 async def list_my_attempts(owner: CurrentPetOwnerDep, db: DbDep) -> list[QuizAttemptOut]:
     """The signed-in Pet Owner's own quiz attempts (newest first).
 
@@ -79,7 +80,7 @@ async def list_my_attempts(owner: CurrentPetOwnerDep, db: DbDep) -> list[QuizAtt
     ]
 
 
-@router.get("/{quiz_id}", response_model=QuizOut)
+@router.get("/{quiz_id}", response_model=QuizOut, dependencies=[Depends(require(Permission.QUIZ_VIEW))])
 async def get_quiz(
     quiz_id: uuid.UUID, _account: CurrentAccountDep, db: DbDep
 ) -> QuizOut:
@@ -89,7 +90,7 @@ async def get_quiz(
     return _to_out(q)
 
 
-@router.post("", response_model=QuizOut, status_code=status.HTTP_201_CREATED)
+@router.post("", response_model=QuizOut, status_code=status.HTTP_201_CREATED, dependencies=[Depends(require(Permission.QUIZ_AUTHOR))])
 async def create_quiz(payload: QuizIn, _vet: CurrentVetDep, db: DbDep) -> QuizOut:
     q = Quiz(
         title=payload.title,
@@ -107,6 +108,7 @@ async def create_quiz(payload: QuizIn, _vet: CurrentVetDep, db: DbDep) -> QuizOu
     "/{quiz_id}/attempts",
     response_model=QuizAttemptOut,
     status_code=status.HTTP_201_CREATED,
+    dependencies=[Depends(require(Permission.QUIZ_TAKE))],
 )
 async def submit_attempt(
     quiz_id: uuid.UUID,

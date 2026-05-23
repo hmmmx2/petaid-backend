@@ -6,11 +6,12 @@ The router delegates the actual charge to :class:`PaymentProcessor`
 """
 from __future__ import annotations
 
-from fastapi import APIRouter, status
+from fastapi import APIRouter, Depends, status
 from sqlalchemy import select
 
-from app.api.deps import CurrentAccountDep, CurrentPetOwnerDep, DbDep
+from app.api.deps import CurrentAccountDep, CurrentPetOwnerDep, DbDep, require
 from app.core.rate_limit import enforce
+from app.domain.permissions import Permission
 from app.domain.app_controller import get_app_controller
 from app.domain.events import CH_DONATION_COMPLETED, DomainEvent
 from app.domain.exceptions import PaymentFailedException
@@ -25,7 +26,7 @@ router = APIRouter(prefix="/donations", tags=["donations"])
 _processor = MockPaymentProcessor()
 
 
-@router.post("", response_model=DonationOut, status_code=status.HTTP_201_CREATED)
+@router.post("", response_model=DonationOut, status_code=status.HTTP_201_CREATED, dependencies=[Depends(require(Permission.DONATION_CREATE))])
 async def create_donation(
     payload: DonationIn, owner: CurrentPetOwnerDep, db: DbDep
 ) -> DonationOut:
@@ -90,7 +91,7 @@ async def create_donation(
     )
 
 
-@router.get("", response_model=list[DonationOut])
+@router.get("", response_model=list[DonationOut], dependencies=[Depends(require(Permission.DONATION_VIEW))])
 async def list_donations(account: CurrentAccountDep, db: DbDep) -> list[DonationOut]:
     """Pet Owners see their own donations; Veterinary Experts see every
     succeeded donation for verification (SRS §7.5)."""

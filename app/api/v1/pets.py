@@ -3,19 +3,21 @@ from __future__ import annotations
 
 import uuid
 
-from fastapi import APIRouter, status
+from fastapi import APIRouter, Depends, status
 from sqlalchemy import select
 from sqlalchemy.orm import selectinload
 
-from app.api.deps import CurrentPetOwnerDep, DbDep
+from app.api.deps import CurrentPetOwnerDep, DbDep, require
 from app.domain.exceptions import NotFoundException
+from app.domain.permissions import Permission
 from app.models.pet import Pet
 from app.schemas.common import PetIn, PetOut
 
 router = APIRouter(prefix="/pets", tags=["pets"])
+_pet_manage = [Depends(require(Permission.PET_MANAGE))]
 
 
-@router.get("", response_model=list[PetOut])
+@router.get("", response_model=list[PetOut], dependencies=_pet_manage)
 async def list_pets(owner: CurrentPetOwnerDep, db: DbDep) -> list[Pet]:
     rows = await db.scalars(
         select(Pet)
@@ -26,7 +28,7 @@ async def list_pets(owner: CurrentPetOwnerDep, db: DbDep) -> list[Pet]:
     return list(rows)
 
 
-@router.post("", response_model=PetOut, status_code=status.HTTP_201_CREATED)
+@router.post("", response_model=PetOut, status_code=status.HTTP_201_CREATED, dependencies=_pet_manage)
 async def create_pet(
     payload: PetIn, owner: CurrentPetOwnerDep, db: DbDep
 ) -> Pet:
@@ -37,7 +39,7 @@ async def create_pet(
     return pet
 
 
-@router.delete("/{pet_id}", status_code=status.HTTP_204_NO_CONTENT)
+@router.delete("/{pet_id}", status_code=status.HTTP_204_NO_CONTENT, dependencies=_pet_manage)
 async def delete_pet(
     pet_id: uuid.UUID, owner: CurrentPetOwnerDep, db: DbDep
 ) -> None:
