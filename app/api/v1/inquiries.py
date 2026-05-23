@@ -9,6 +9,7 @@ from sqlalchemy import or_, select
 
 from app.api.deps import CurrentAccountDep, CurrentPetOwnerDep, CurrentVetDep, DbDep, require
 from app.core.rate_limit import enforce
+from app.core.storage import offload_many
 from app.domain.permissions import Permission
 from app.domain.app_controller import get_app_controller
 from app.domain.events import CH_INQUIRY_RESPONDED, CH_INQUIRY_SUBMITTED, DomainEvent
@@ -30,11 +31,13 @@ async def submit_inquiry(
 ) -> Inquiry:
     # Anti-spam: cap inquiry submissions per owner.
     enforce("inquiry_create", str(owner.id), max_requests=10, window_seconds=3600)
+    # Offload any uploaded photos (base64 data-URLs) to object storage if enabled.
+    images = await offload_many(list(payload.images), "inquiries")
     inquiry = Inquiry(
         pet_owner_id=owner.id,
         subject=payload.subject,
         question=payload.question,
-        image_urls=list(payload.images),
+        image_urls=images,
         status=InquiryStatus.PENDING,
         submitted_at=datetime.now(timezone.utc),
     )

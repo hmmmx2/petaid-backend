@@ -29,6 +29,15 @@ class Settings(BaseSettings):
     db_pool_size: int = Field(default=5)
     db_max_overflow: int = Field(default=10)
 
+    # --- Object storage (Supabase Storage) ------------------------------ #
+    # When both are set, uploaded image data-URLs are offloaded to a public
+    # Supabase Storage bucket and the DB stores the public URL instead of the
+    # inline base64. Unset → images stay inline (graceful fallback). The
+    # service-role key is server-only and must never reach the frontend.
+    supabase_url: str = Field(default="")
+    supabase_service_key: str = Field(default="")
+    supabase_storage_bucket: str = Field(default="pet-media")
+
     @property
     def cors_origins_list(self) -> list[str]:
         return [o.strip() for o in self.cors_origins.split(",") if o.strip()]
@@ -62,6 +71,11 @@ class Settings(BaseSettings):
     def is_supabase(self) -> bool:
         """True when DATABASE_URL points at a Supabase host."""
         return "supabase." in self.database_url or "pooler.supabase.com" in self.database_url
+
+    @property
+    def storage_enabled(self) -> bool:
+        """True when Supabase Storage is configured for image offload."""
+        return bool(self.supabase_url and self.supabase_service_key)
 
 
 @lru_cache(maxsize=1)

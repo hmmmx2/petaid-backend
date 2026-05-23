@@ -8,6 +8,7 @@ from sqlalchemy import select
 from sqlalchemy.orm import selectinload
 
 from app.api.deps import CurrentPetOwnerDep, DbDep, require
+from app.core.storage import offload_data_url
 from app.domain.exceptions import NotFoundException
 from app.domain.permissions import Permission
 from app.models.pet import Pet
@@ -32,7 +33,10 @@ async def list_pets(owner: CurrentPetOwnerDep, db: DbDep) -> list[Pet]:
 async def create_pet(
     payload: PetIn, owner: CurrentPetOwnerDep, db: DbDep
 ) -> Pet:
-    pet = Pet(owner_id=owner.id, **payload.model_dump())
+    data = payload.model_dump()
+    # Offload an uploaded photo (base64 data-URL) to object storage if enabled.
+    data["image_url"] = await offload_data_url(data.get("image_url"), "pets")
+    pet = Pet(owner_id=owner.id, **data)
     db.add(pet)
     await db.commit()
     await db.refresh(pet, attribute_names=["pet_type"])
@@ -47,7 +51,10 @@ async def update_pet(
     pet = await db.get(Pet, pet_id)
     if pet is None or pet.owner_id != owner.id:
         raise NotFoundException("Pet")
-    for field, value in payload.model_dump(exclude_unset=True).items():
+    fields = payload.model_dump(exclude_unset=True)
+    if "image_url" in fields:
+        fields["image_url"] = await offload_data_url(fields["image_url"], "pets")
+    for field, value in fields.items():
         setattr(pet, field, value)
     await db.commit()
     await db.refresh(pet, attribute_names=["pet_type"])

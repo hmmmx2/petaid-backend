@@ -16,6 +16,7 @@ from sqlalchemy.orm import selectinload
 
 from app.api.deps import CurrentAccountDep, CurrentPetOwnerDep, CurrentVetDep, DbDep, require
 from app.core.rate_limit import enforce
+from app.core.storage import offload_data_url
 from app.domain.app_controller import get_app_controller
 from app.domain.events import (
     CH_CHAT_CLOSED,
@@ -182,7 +183,7 @@ async def post_message(
         chat_id=chat.id,
         sender_id=account.id,
         body=payload.body or "",
-        image_url=payload.image_url,
+        image_url=await offload_data_url(payload.image_url, "chats"),
         sent_at=datetime.now(timezone.utc),
     )
     db.add(message)
