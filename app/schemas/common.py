@@ -17,12 +17,29 @@ class PetTypeOut(BaseModel):
     icon_bg: str
 
 
+def _validate_image_url(v: str | None) -> str | None:
+    """Accept a single image data URL or http(s) URL, capped at ~2 MB."""
+    if v is None or v == "":
+        return None
+    if not (v.startswith("data:image/") or v.startswith("http://") or v.startswith("https://")):
+        raise ValueError("Image must be an image data URL or an http(s) URL.")
+    if len(v) > 2_000_000:
+        raise ValueError("Image is too large (max ~2 MB).")
+    return v
+
+
 class PetIn(BaseModel):
     name: str = Field(min_length=1, max_length=80)
     pet_type_id: uuid.UUID
     breed: str | None = Field(default=None, max_length=80)
     age_years: int | None = Field(default=None, ge=0, le=80)
     health_notes: str = Field(default="", max_length=1000)
+    image_url: str | None = Field(default=None)
+
+    @field_validator("image_url")
+    @classmethod
+    def _check_image(cls, v: str | None) -> str | None:
+        return _validate_image_url(v)
 
 
 class PetUpdate(BaseModel):
@@ -33,6 +50,12 @@ class PetUpdate(BaseModel):
     breed: str | None = Field(default=None, max_length=80)
     age_years: int | None = Field(default=None, ge=0, le=80)
     health_notes: str | None = Field(default=None, max_length=1000)
+    image_url: str | None = Field(default=None)
+
+    @field_validator("image_url")
+    @classmethod
+    def _check_image(cls, v: str | None) -> str | None:
+        return _validate_image_url(v)
 
 
 class PetOut(BaseModel):
@@ -43,6 +66,7 @@ class PetOut(BaseModel):
     breed: str | None
     age_years: int | None
     health_notes: str
+    image_url: str | None = None
     pet_type: PetTypeOut
 
 
