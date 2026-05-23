@@ -53,6 +53,14 @@ class Chat(UUIDPkMixin, TimestampMixin, Base):
     ended_at: Mapped[datetime | None] = mapped_column(
         DateTime(timezone=True), nullable=True
     )
+    # Per-participant read cursors → unread counts + "Seen" receipts. Exactly two
+    # participants, so two columns are simpler than a ChatParticipant table.
+    owner_last_read_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True), nullable=True
+    )
+    vet_last_read_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True), nullable=True
+    )
 
     pet_owner = relationship(
         "Account", foreign_keys=[pet_owner_id], lazy="joined"
@@ -96,7 +104,8 @@ class ChatMessage(UUIDPkMixin, TimestampMixin, Base):
         index=True,
         nullable=False,
     )
-    body: Mapped[str] = mapped_column(Text, nullable=False)
+    body: Mapped[str] = mapped_column(Text, nullable=False, default="")
+    image_url: Mapped[str | None] = mapped_column(Text, nullable=True)
     sent_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
 
     chat = relationship("Chat", back_populates="messages")

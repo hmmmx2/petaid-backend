@@ -209,7 +209,21 @@ class ChatIn(BaseModel):
 
 
 class ChatMessageIn(BaseModel):
-    body: str = Field(min_length=1, max_length=2000)
+    body: str = Field(default="", max_length=2000)
+    image_url: str | None = Field(default=None)
+
+    @field_validator("image_url")
+    @classmethod
+    def _check_image(cls, v: str | None) -> str | None:
+        return _validate_image_url(v)
+
+    @field_validator("image_url")
+    @classmethod
+    def _require_content(cls, v: str | None, info) -> str | None:
+        # A message must have text or an image (validated after both parsed).
+        if not v and not (info.data.get("body") or "").strip():
+            raise ValueError("A message needs text or an image.")
+        return v
 
 
 class ChatMessageOut(BaseModel):
@@ -218,6 +232,13 @@ class ChatMessageOut(BaseModel):
     id: uuid.UUID
     sender_id: uuid.UUID
     body: str
+    image_url: str | None = None
+    sent_at: datetime
+
+
+class ChatLastMessage(BaseModel):
+    sender_id: uuid.UUID
+    preview: str
     sent_at: datetime
 
 
@@ -229,6 +250,12 @@ class ChatOut(BaseModel):
     status: str
     started_at: datetime
     ended_at: datetime | None
+    pet_owner_id: uuid.UUID | None = None
+    vet_id: uuid.UUID | None = None
+    owner_last_read_at: datetime | None = None
+    vet_last_read_at: datetime | None = None
+    unread: int = 0
+    last_message: ChatLastMessage | None = None
     messages: list[ChatMessageOut] = []
 
 

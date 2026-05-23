@@ -17,6 +17,7 @@ from app.api.v1 import (
     pets,
     quizzes,
     resources,
+    ws,
 )
 
 api_router = APIRouter(prefix="/api/v1")
@@ -31,3 +32,4 @@ api_router.include_router(inquiries.router)
 api_router.include_router(chats.router)
 api_router.include_router(donations.router)
 api_router.include_router(feedback.router)
+api_router.include_router(ws.router)
