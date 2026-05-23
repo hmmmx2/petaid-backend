@@ -12,7 +12,9 @@ class RegisterRequest(BaseModel):
     )
     full_name: str = Field(min_length=1, max_length=80)
     email: EmailStr
-    password: str = Field(min_length=6, max_length=64)
+    # Length bounds here are a first gate; full complexity (upper/lower/digit)
+    # is enforced by AuthManager.validate_password_strength.
+    password: str = Field(min_length=8, max_length=64)
 
 
 class RegisterResponse(BaseModel):
@@ -54,3 +56,25 @@ class TokenPair(BaseModel):
 
 class RefreshRequest(BaseModel):
     refresh_token: str
+
+
+class ForgotPasswordRequest(BaseModel):
+    email: EmailStr
+
+
+class ResetPasswordRequest(BaseModel):
+    email: EmailStr
+    code: str = Field(min_length=4, max_length=8)
+    new_password: str = Field(min_length=8, max_length=64)
+
+
+class ChangePasswordRequest(BaseModel):
+    current_password: str = Field(min_length=1, max_length=64)
+    new_password: str = Field(min_length=8, max_length=64)
+
+
+class MessageResponse(BaseModel):
+    """Generic success/info envelope; ``reset_code`` is dev-only (no mail server)."""
+
+    message: str
+    reset_code: str | None = None

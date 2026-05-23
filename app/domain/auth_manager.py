@@ -14,6 +14,7 @@ mutate :class:`UserCredentials` (heuristic 4.1.2, data hiding).
 """
 from __future__ import annotations
 
+import re
 import secrets
 from datetime import datetime, timedelta, timezone
 
@@ -35,10 +36,12 @@ from app.models.credentials import UserCredentials
 # Tuning constants per SRS 1.3.3 (mirrors the reference core/20-auth-manager.js)
 MAX_FAILED_ATTEMPTS = 5
 LOCKOUT_SECONDS = 30
-MIN_PASSWORD_LENGTH = 6
+MIN_PASSWORD_LENGTH = 8
 MAX_PASSWORD_LENGTH = 64
 MAX_NAME_LENGTH = 80
 RESEND_COOLDOWN_SECONDS = 30  # min gap between verification-code re-sends
+VERIFICATION_TTL_SECONDS = 900  # email verification codes expire after 15 minutes
+RESET_TTL_SECONDS = 900  # password-reset codes expire after 15 minutes
 
 # Single password context shared by all credential operations.
 _pwd_context = CryptContext(schemes=["bcrypt"], deprecated="auto")
@@ -63,11 +66,15 @@ class AuthManager:
         consume_mfa_token, reset_failed_attempts
     """
 
-    # email (lower) -> 6-digit verification code. In-memory for the prototype
+    # email (lower) -> (6-digit code, expiry). In-memory for the prototype
     # (the reference stores it the same way — SRS A3 allows this simplification).
-    _pending_verifications: dict[str, str] = {}
+    # Single-instance only; a horizontally-scaled deployment would move these to
+    # a shared store (Redis), behind the same AuthManager interface.
+    _pending_verifications: dict[str, tuple[str, datetime]] = {}
     # email (lower) -> last time a verification code was issued (rate-limiting).
     _last_verification_sent: dict[str, datetime] = {}
+    # email (lower) -> (6-digit reset code, expiry) for password recovery.
+    _pending_resets: dict[str, tuple[str, datetime]] = {}
 
     def __init__(self, event_bus: EventBus) -> None:
         self._event_bus = event_bus
@@ -129,9 +136,10 @@ class AuthManager:
         await db.commit()
         await db.refresh(account)
 
+        now = datetime.now(timezone.utc)
         code = f"{secrets.randbelow(900000) + 100000}"
-        self._pending_verifications[email] = code
-        self._last_verification_sent[email] = datetime.now(timezone.utc)
+        self._pending_verifications[email] = (code, now + timedelta(seconds=VERIFICATION_TTL_SECONDS))
+        self._last_verification_sent[email] = now
         return account, code
 
     async def resend_verification(
@@ -165,7 +173,7 @@ class AuthManager:
             )
 
         code = f"{secrets.randbelow(900000) + 100000}"
-        self._pending_verifications[email] = code
+        self._pending_verifications[email] = (code, now + timedelta(seconds=VERIFICATION_TTL_SECONDS))
         self._last_verification_sent[email] = now
         return code
 
@@ -174,8 +182,14 @@ class AuthManager:
     ) -> Account:
         """Mark an account's email verified once the right code is supplied."""
         email = email.strip().lower()
-        expected = self._pending_verifications.get(email)
-        if not expected or expected != code.strip():
+        entry = self._pending_verifications.get(email)
+        if not entry:
+            raise InvalidInputException("code", "Verification code is invalid or has expired.")
+        expected, expires_at = entry
+        if datetime.now(timezone.utc) > expires_at:
+            self._pending_verifications.pop(email, None)
+            raise InvalidInputException("code", "Verification code has expired. Request a new one.")
+        if expected != code.strip():
             raise InvalidInputException("code", "Verification code is incorrect.")
         creds = await db.scalar(
             select(UserCredentials).where(UserCredentials.email == email)
@@ -300,10 +314,113 @@ class AuthManager:
         await db.commit()
 
     # ------------------------------------------------------------------ #
+    # Password recovery / change                                         #
+    # ------------------------------------------------------------------ #
+    async def request_password_reset(
+        self, db: AsyncSession, *, email: str
+    ) -> str | None:
+        """Issue a password-reset code for a verified account.
+
+        Returns the 6-digit code, or ``None`` when there is nothing to reset
+        (unknown email, or an account that never verified). Returning ``None``
+        rather than raising lets the endpoint respond identically every time —
+        no account enumeration.
+        """
+        email = email.strip().lower()
+        creds = await db.scalar(
+            select(UserCredentials).where(UserCredentials.email == email)
+        )
+        if creds is None:
+            return None
+        account = await db.get(Account, creds.account_id)
+        if account is None or not account.email_verified:
+            return None
+        code = f"{secrets.randbelow(900000) + 100000}"
+        self._pending_resets[email] = (
+            code,
+            datetime.now(timezone.utc) + timedelta(seconds=RESET_TTL_SECONDS),
+        )
+        return code
+
+    async def reset_password(
+        self, db: AsyncSession, *, email: str, code: str, new_password: str
+    ) -> None:
+        """Set a new password after validating the reset code and its expiry."""
+        email = email.strip().lower()
+        entry = self._pending_resets.get(email)
+        if not entry:
+            raise InvalidInputException("code", "This reset code is invalid or has expired.")
+        expected, expires_at = entry
+        if datetime.now(timezone.utc) > expires_at:
+            self._pending_resets.pop(email, None)
+            raise InvalidInputException("code", "This reset code has expired. Request a new one.")
+        if expected != code.strip():
+            raise InvalidInputException("code", "Reset code is incorrect.")
+        self.validate_password_strength(new_password)
+        creds = await db.scalar(
+            select(UserCredentials).where(UserCredentials.email == email)
+        )
+        if creds is None:
+            raise InvalidInputException("email", "Account not found.")
+        creds.hashed_password = _pwd_context.hash(new_password)
+        # A successful reset also clears any lockout so the user can sign in.
+        creds.failed_attempts = 0
+        creds.locked_until = None
+        await db.commit()
+        self._pending_resets.pop(email, None)
+
+    async def change_password(
+        self,
+        db: AsyncSession,
+        *,
+        account: Account,
+        current_password: str,
+        new_password: str,
+    ) -> None:
+        """Change the password of an already-authenticated account."""
+        creds = await db.scalar(
+            select(UserCredentials).where(UserCredentials.account_id == account.id)
+        )
+        if creds is None:
+            raise InvalidInputException("current_password", "Account not found.")
+        if not _pwd_context.verify(current_password, creds.hashed_password):
+            raise InvalidInputException("current_password", "Current password is incorrect.")
+        self.validate_password_strength(new_password)
+        if _pwd_context.verify(new_password, creds.hashed_password):
+            raise InvalidInputException(
+                "new_password", "New password must be different from your current one."
+            )
+        creds.hashed_password = _pwd_context.hash(new_password)
+        await db.commit()
+
+    # ------------------------------------------------------------------ #
     # Input validation                                                   #
     # ------------------------------------------------------------------ #
     @staticmethod
-    def _validate_input(*, full_name: str, email: str, password: str) -> None:
+    def validate_password_strength(password: str) -> None:
+        """Enforce the password policy (shared by register / reset / change).
+
+        Policy: 8–64 characters, with at least one lowercase letter, one
+        uppercase letter and one digit. Raises :class:`InvalidInputException`
+        on the offending field so the UI can highlight it.
+        """
+        if len(password) < MIN_PASSWORD_LENGTH:
+            raise InvalidInputException(
+                "password", f"Password must be at least {MIN_PASSWORD_LENGTH} characters."
+            )
+        if len(password) > MAX_PASSWORD_LENGTH:
+            raise InvalidInputException(
+                "password", f"Password must be at most {MAX_PASSWORD_LENGTH} characters."
+            )
+        if not re.search(r"[a-z]", password):
+            raise InvalidInputException("password", "Password must include a lowercase letter.")
+        if not re.search(r"[A-Z]", password):
+            raise InvalidInputException("password", "Password must include an uppercase letter.")
+        if not re.search(r"\d", password):
+            raise InvalidInputException("password", "Password must include a number.")
+
+    @classmethod
+    def _validate_input(cls, *, full_name: str, email: str, password: str) -> None:
         if not full_name or not full_name.strip():
             raise InvalidInputException("full_name", "Full name is required.")
         if len(full_name) > MAX_NAME_LENGTH:
@@ -312,13 +429,4 @@ class AuthManager:
             )
         if "@" not in email or "." not in email.split("@")[-1]:
             raise InvalidInputException("email", "Email format is invalid.")
-        if len(password) < MIN_PASSWORD_LENGTH:
-            raise InvalidInputException(
-                "password",
-                f"Password must be at least {MIN_PASSWORD_LENGTH} characters.",
-            )
-        if len(password) > MAX_PASSWORD_LENGTH:
-            raise InvalidInputException(
-                "password",
-                f"Password must be at most {MAX_PASSWORD_LENGTH} characters.",
-            )
+        cls.validate_password_strength(password)
