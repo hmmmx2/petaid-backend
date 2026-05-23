@@ -11,7 +11,7 @@ import uuid
 
 from fastapi import APIRouter, Depends, HTTPException, status
 
-from app.api.deps import DbDep
+from app.api.deps import CurrentVetDep, DbDep
 from app.core.config import get_settings
 from app.core.rate_limit import rate_limit_ip
 from app.core.security import create_token, decode_token
@@ -120,6 +120,16 @@ async def login(payload: LoginRequest, db: DbDep) -> TokenPair:
         mfa_token=payload.mfa_token,
     )
     return _issue_tokens(account)
+
+
+@router.get("/mfa/provisioning")
+async def mfa_provisioning(vet: CurrentVetDep, db: DbDep) -> dict[str, str | None]:
+    """Return the current vet's TOTP enrolment URI (for adding to an
+    authenticator app). Only the account's own secret is exposed, and only to
+    an already-authenticated session."""
+    controller = get_app_controller()
+    uri = await controller.auth_manager.get_mfa_provisioning_uri(db, vet)
+    return {"otpauth_uri": uri}
 
 
 @router.post("/refresh", response_model=TokenPair)

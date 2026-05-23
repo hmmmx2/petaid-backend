@@ -21,6 +21,7 @@ from passlib.context import CryptContext
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.core import totp
 from app.domain.events import EventBus
 from app.domain.exceptions import (
     AccountLockedException,
@@ -37,7 +38,6 @@ LOCKOUT_SECONDS = 30
 MIN_PASSWORD_LENGTH = 6
 MAX_PASSWORD_LENGTH = 64
 MAX_NAME_LENGTH = 80
-DEMO_MFA_SECRET = "123456"
 RESEND_COOLDOWN_SECONDS = 30  # min gap between verification-code re-sends
 
 # Single password context shared by all credential operations.
@@ -115,12 +115,15 @@ class AuthManager:
         db.add(account)
         await db.flush()  # need account.id for FK
 
+        is_vet = isinstance(account, VeterinaryExpert)
         creds = UserCredentials(
             account_id=account.id,
             email=email,
             hashed_password=_pwd_context.hash(password),
-            mfa_enabled=isinstance(account, VeterinaryExpert),
-            mfa_secret=DEMO_MFA_SECRET if isinstance(account, VeterinaryExpert) else None,
+            mfa_enabled=is_vet,
+            # Real per-account TOTP secret (RFC 6238) for vets — no shared/static
+            # code. Enrol by scanning the provisioning URI in an authenticator app.
+            mfa_secret=totp.generate_secret() if is_vet else None,
         )
         db.add(creds)
         await db.commit()
@@ -238,8 +241,16 @@ class AuthManager:
                 "Please verify your email before signing in."
             )
 
-        if creds.mfa_enabled and not self._mfa_ok(creds, mfa_token):
-            raise MfaRequiredException()
+        if creds.mfa_enabled:
+            if not mfa_token:
+                # First factor passed; prompt for the TOTP code. Not an attempt
+                # against the code itself, so the lockout counter is untouched.
+                raise MfaRequiredException()
+            if not totp.verify(creds.mfa_secret or "", mfa_token):
+                # A wrong code IS a guess at the second factor — count it toward
+                # the lockout so the 6-digit space can't be brute-forced.
+                await self._record_failed_attempt(db, creds)
+                raise MfaRequiredException()
 
         # Successful login — clear any failure counter / expired-lock marker
         # so the cleared state is persisted (not just held in memory).
@@ -250,18 +261,21 @@ class AuthManager:
 
         return account
 
-    @staticmethod
-    def _mfa_ok(creds: UserCredentials, mfa_token: str | None) -> bool:
-        """Verify the supplied MFA token.
+    async def get_mfa_provisioning_uri(
+        self, db: AsyncSession, account: Account
+    ) -> str | None:
+        """Return the ``otpauth://`` enrolment URI for the account's TOTP secret.
 
-        Assignment 3 scope does not require a real TOTP. We accept a static
-        per-account ``mfa_secret`` value so the scenario is testable.
+        Used by an already-authenticated vet to (re-)enrol a device. Returns
+        ``None`` if MFA isn't enabled. Reading credentials stays inside
+        AuthManager (data-hiding heuristic 4.1.2).
         """
-        if not creds.mfa_enabled:
-            return True
-        if not mfa_token:
-            return False
-        return mfa_token == (creds.mfa_secret or "123456")
+        creds = await db.scalar(
+            select(UserCredentials).where(UserCredentials.account_id == account.id)
+        )
+        if creds is None or not creds.mfa_enabled or not creds.mfa_secret:
+            return None
+        return totp.provisioning_uri(creds.mfa_secret, account_name=creds.email)
 
     @staticmethod
     def _enforce_lockout(creds: UserCredentials) -> None:

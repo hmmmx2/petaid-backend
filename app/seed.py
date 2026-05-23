@@ -5,7 +5,8 @@ through end-to-end against the data this lays down.
 
 Demo accounts (pre-verified):
     Pet Owner    alwin@petaid.com   / pet123
-    Vet Expert   kavitha@petaid.com / vet123   (MFA 123456)
+    Vet Expert   kavitha@petaid.com / vet123   (real TOTP MFA — the dev secret
+                 and a current code are printed when this seed runs)
 
 Usage:
     python -m app.seed
@@ -18,6 +19,7 @@ from datetime import datetime, timedelta, timezone
 
 from sqlalchemy import select
 
+from app.core import totp
 from app.core.database import Base, SessionLocal, engine
 from app.core.security import hash_password
 from app.models.account import PetOwner, VeterinaryExpert
@@ -39,7 +41,10 @@ OWNER_EMAIL = "alwin@petaid.com"
 OWNER_PASSWORD = "pet123"
 VET_EMAIL = "kavitha@petaid.com"
 VET_PASSWORD = "vet123"
-VET_MFA_CODE = "123456"
+# Fixed base32 TOTP secret for the seeded demo vet so the MFA flow is
+# reproducible in dev. Real vets are provisioned with random secrets
+# (AuthManager.register / the association's onboarding) — never a shared one.
+VET_TOTP_SECRET = "JBSWY3DPEHPK3PXPJBSWY3DPEHPK3PXP"
 
 
 async def create_schema() -> None:
@@ -87,8 +92,13 @@ async def seed() -> None:
                 email=VET_EMAIL,
                 hashed_password=hash_password(VET_PASSWORD),
                 mfa_enabled=True,
-                mfa_secret=VET_MFA_CODE,
+                mfa_secret=VET_TOTP_SECRET,
             )
+        )
+        logger.info(
+            "Vet MFA (dev): enrol with %s | current code now = %s",
+            totp.provisioning_uri(VET_TOTP_SECRET, account_name=VET_EMAIL),
+            totp.now_code(VET_TOTP_SECRET),
         )
 
         # --- Pet Types ------------------------------------------------- #
