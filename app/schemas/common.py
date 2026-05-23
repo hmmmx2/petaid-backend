@@ -25,6 +25,16 @@ class PetIn(BaseModel):
     health_notes: str = Field(default="", max_length=1000)
 
 
+class PetUpdate(BaseModel):
+    """Partial update — only the supplied fields are changed."""
+
+    name: str | None = Field(default=None, min_length=1, max_length=80)
+    pet_type_id: uuid.UUID | None = None
+    breed: str | None = Field(default=None, max_length=80)
+    age_years: int | None = Field(default=None, ge=0, le=80)
+    health_notes: str | None = Field(default=None, max_length=1000)
+
+
 class PetOut(BaseModel):
     model_config = ConfigDict(from_attributes=True)
 
