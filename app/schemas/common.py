@@ -35,6 +35,7 @@ class PetIn(BaseModel):
     age_years: int | None = Field(default=None, ge=0, le=80)
     health_notes: str = Field(default="", max_length=1000)
     image_url: str | None = Field(default=None)
+    icon_emoji: str | None = Field(default=None, max_length=16)
 
     @field_validator("image_url")
     @classmethod
@@ -51,6 +52,7 @@ class PetUpdate(BaseModel):
     age_years: int | None = Field(default=None, ge=0, le=80)
     health_notes: str | None = Field(default=None, max_length=1000)
     image_url: str | None = Field(default=None)
+    icon_emoji: str | None = Field(default=None, max_length=16)
 
     @field_validator("image_url")
     @classmethod
@@ -67,6 +69,7 @@ class PetOut(BaseModel):
     age_years: int | None
     health_notes: str
     image_url: str | None = None
+    icon_emoji: str | None = None
     pet_type: PetTypeOut
 
 

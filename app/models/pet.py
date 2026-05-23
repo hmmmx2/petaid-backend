@@ -37,9 +37,9 @@ class Pet(UUIDPkMixin, TimestampMixin, Base):
     breed: Mapped[str | None] = mapped_column(String(80), nullable=True)
     age_years: Mapped[int | None] = mapped_column(Integer, nullable=True)
     health_notes: Mapped[str] = mapped_column(Text, nullable=False, default="")
-    # Optional owner-uploaded photo (downscaled data URL); falls back to the
-    # pet-type emoji when null.
+    # Avatar: a photo wins, else a custom chosen icon, else the pet-type emoji.
     image_url: Mapped[str | None] = mapped_column(Text, nullable=True)
+    icon_emoji: Mapped[str | None] = mapped_column(String(16), nullable=True)
 
     owner = relationship("PetOwner", back_populates="pets")
     pet_type = relationship("PetType", lazy="joined")
