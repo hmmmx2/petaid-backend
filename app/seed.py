@@ -15,6 +15,7 @@ from __future__ import annotations
 
 import asyncio
 import logging
+import sys
 from datetime import datetime, timedelta, timezone
 
 from sqlalchemy import select
@@ -36,6 +37,16 @@ from app.models.resource import Resource, ResourceStatus
 
 logger = logging.getLogger("petaid.seed")
 logging.basicConfig(level=logging.INFO)
+
+# Seed data contains emoji (e.g. 🐕 pet-type icons). Windows consoles default to
+# cp1252, which can't encode them, so SQLAlchemy's echo logging would raise a
+# UnicodeEncodeError while printing INSERTs. Force UTF-8 on the streams so the
+# script never crashes on non-ASCII output.
+for _stream in (sys.stdout, sys.stderr):
+    try:
+        _stream.reconfigure(encoding="utf-8")  # type: ignore[attr-defined]
+    except (AttributeError, ValueError):  # pragma: no cover - non-reconfigurable stream
+        pass
 
 OWNER_EMAIL = "alwin@petaid.com"
 OWNER_PASSWORD = "pet123"
@@ -312,7 +323,10 @@ async def seed() -> None:
         await db.commit()
         logger.info("Seed complete.")
         logger.info("  Pet Owner login : %s / %s", OWNER_EMAIL, OWNER_PASSWORD)
-        logger.info("  Vet Expert login: %s / %s  (MFA: %s)", VET_EMAIL, VET_PASSWORD, VET_MFA_CODE)
+        logger.info(
+            "  Vet Expert login: %s / %s  (MFA code now: %s)",
+            VET_EMAIL, VET_PASSWORD, totp.now_code(VET_TOTP_SECRET),
+        )
 
 
 async def _main() -> None:
