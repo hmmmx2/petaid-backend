@@ -1,126 +1,232 @@
-# petaid-backend
+# PetAid — Backend (FastAPI)
 
-FastAPI service powering [PetAid](https://github.com/) — a warm, light-mode web app for pet first-aid guidance.
+PetAid is a warm, light-mode web application for **pet first-aid guidance and veterinary support**.
+This repository is the **backend API**; the user interface lives in a separate repo,
+[`petaid-frontend`](https://github.com/hmmmx2/petaid-frontend) (Next.js).
 
-- **Framework:** FastAPI · async SQLAlchemy 2 · asyncpg
-- **Auth:** JWT (access + refresh) · bcrypt-hashed passwords
-- **Migrations:** Alembic
-- **Database:** PostgreSQL 16
-- **Deploys to:** Railway (Docker)
+> Built for **SWE30003 — Software Architectures & Design, Assignment 3**. The object-oriented domain
+> model from Assignment 2 is implemented here as a layered FastAPI service with a PostgreSQL database.
 
-The frontend lives in a separate repo: **petaid-frontend** (Next.js 14, deploys to Vercel). The two communicate only over HTTPS.
+- **Framework:** FastAPI · async SQLAlchemy 2.0 · asyncpg
+- **Database:** PostgreSQL 16 (hosted on **Supabase**; runs on local Postgres too)
+- **Auth:** JWT (access + refresh) · bcrypt password hashing · RFC-6238 TOTP MFA for vets · RBAC
+- **Real-time:** WebSockets (live chat: messages, typing, presence, read receipts)
+- **Migrations:** Alembic (or one-shot `python -m app.seed` for dev)
 
-## Quick start (local)
+## Architecture at a glance
+
+```
+Browser ──HTTPS──►  petaid-frontend (Next.js)  ──HTTPS/JSON──►  petaid-backend (FastAPI)  ──►  PostgreSQL (Supabase)
+                                                  ◄──WebSocket──   /api/v1/ws/chat
+```
+
+The frontend never talks to the database directly — it only calls this API. This backend owns all
+domain logic, validation, RBAC, rate limiting and persistence.
+
+---
+
+## 1. Prerequisites
+
+| Tool | Version | Notes |
+| --- | --- | --- |
+| **Python** | 3.11 or newer (3.12 used in dev) | `python --version` |
+| **A PostgreSQL database** | 14+ | Either a free [Supabase](https://supabase.com) project **or** local Postgres (Docker provided) |
+| **Git** | any | to clone |
+| *(optional)* **Docker Desktop** | any | only if you want a local Postgres via `docker compose` |
+
+Development & testing platform: **Windows 11 + PowerShell**, editor **VS Code**. The commands below
+are PowerShell; the equivalent macOS/Linux commands are noted where they differ.
+
+---
+
+## 2. Clone the repository
+
+```powershell
+git clone https://github.com/hmmmx2/petaid-backend.git
+cd petaid-backend
+```
+
+## 3. Create a virtual environment & install dependencies
 
 ```powershell
 python -m venv .venv
-.\.venv\Scripts\Activate.ps1
+.\.venv\Scripts\Activate.ps1        # macOS/Linux:  source .venv/bin/activate
+python -m pip install --upgrade pip
 pip install -r requirements.txt
-Copy-Item .env.example .env
-# Edit .env: set DATABASE_URL and JWT_SECRET
-
-# Option A — spin up a local Postgres via docker-compose
-docker compose up -d db
-
-# Option B — point DATABASE_URL at any Postgres you already have
-
-# First-time migration
-alembic revision --autogenerate -m "init"
-alembic upgrade head
-
-# Seed Alwin's demo data (idempotent)
-python -m app.seed
-
-# Run the API
-uvicorn app.main:app --reload
-# → http://localhost:8000
-# → interactive docs at /docs
 ```
 
-**Demo login:** `alwin@petaid.local` / `petaid-demo-2026`
-
-### One-shot via Docker Compose
+## 4. Configure environment variables
 
 ```powershell
-docker compose up --build
-# API on :8000, Postgres on :5432
+Copy-Item .env.example .env         # macOS/Linux:  cp .env.example .env
 ```
+
+Open `.env` and set the values. The two **required** ones are `DATABASE_URL` and `JWT_SECRET`.
+
+#### `DATABASE_URL` — pick ONE source of Postgres
+
+**Option A — Supabase (recommended).** In the Supabase dashboard go to
+**Project Settings → Database → Connection string → URI → Session pooler**, then rewrite the scheme
+to `postgresql+asyncpg://` (full walkthrough in [`SUPABASE.md`](./SUPABASE.md)):
+
+```dotenv
+DATABASE_URL=postgresql+asyncpg://postgres.<project-ref>:<DB-PASSWORD>@aws-1-<region>.pooler.supabase.com:5432/postgres
+DB_SSL=true
+```
+
+**Option B — local Postgres via Docker** (no Supabase account needed):
+
+```powershell
+docker compose up -d db             # starts Postgres on localhost:5432
+```
+```dotenv
+DATABASE_URL=postgresql+asyncpg://petaid:petaid@localhost:5432/petaid
+```
+
+#### `JWT_SECRET` — generate a strong random value
+
+```powershell
+python -c "import secrets; print(secrets.token_urlsafe(48))"
+```
+Paste the output into `JWT_SECRET=...`. Also confirm `CORS_ORIGINS` includes your frontend origin
+(default already allows `http://localhost:3000`).
+
+## 5. Create the database schema + seed demo data
+
+`app.seed` creates every table (`Base.metadata.create_all`) **and** inserts the demo accounts and
+sample content. It is idempotent — safe to re-run.
+
+```powershell
+python -m app.seed
+```
+
+You should see it print the seeded accounts and a current TOTP code for the vet.
+
+> **Production note:** for a real deployment use Alembic migrations instead:
+> `alembic upgrade head` (the Docker image runs this automatically on start).
+
+## 6. Run the API
+
+```powershell
+uvicorn app.main:app --reload
+```
+
+- API base: <http://localhost:8000>
+- Health check: <http://localhost:8000/health> → `{"status":"ok"}`
+- Interactive API docs (Swagger UI): <http://localhost:8000/docs>
+
+## 7. Demo accounts (created by the seed)
+
+| Role | Email | Password | MFA |
+| --- | --- | --- | --- |
+| **Pet Owner** | `alwin@petaid.com` | `pet123` | none |
+| **Veterinary Expert** | `kavitha@petaid.com` | `vet123` | TOTP — a current 6-digit code is printed when the seed runs (dev secret is fixed for reproducibility) |
+
+Log in from the [frontend](https://github.com/hmmmx2/petaid-frontend), or hit the API directly via `/docs`.
+
+---
+
+## Database design
+
+The full database design — entity-relationship diagram, data dictionary, and the
+object-oriented→relational mapping rationale — lives in **[`docs/database/`](./docs/database/)**:
+
+- [`docs/database/DATABASE.md`](./docs/database/DATABASE.md) — ERD + data dictionary + design notes (for the report)
+- [`docs/database/schema.sql`](./docs/database/schema.sql) — runnable PostgreSQL DDL (16 tables)
+
+To recreate the schema in a fresh Supabase project for the report, paste `schema.sql` into the
+Supabase **SQL Editor**, then export the diagram from **Database → Schema Visualizer**.
+
+## API surface (v1)
+
+All routes are under `/api/v1`. Full, always-current spec at `GET /openapi.json` (and `/docs`).
+
+| Area | Example endpoints | Auth |
+| --- | --- | --- |
+| Auth | `POST /auth/register`, `/auth/login`, `/auth/refresh`, `/auth/verify-email`, `GET /auth/me` | public / bearer |
+| Dashboard | `GET /dashboard` (role-aware aggregate + RBAC grants) | bearer |
+| Pets | `GET/POST /pets`, `PATCH/DELETE /pets/{id}`, `GET /pet-types` | bearer |
+| First aid | `GET /first-aid` | public/bearer |
+| Resources | `GET/POST /resources`, `POST /resources/{id}/publish` | bearer (vet) |
+| Quizzes | `GET /quizzes`, `GET /quizzes/{id}`, `POST /quizzes/{id}/attempts`, `GET /quizzes/attempts` | bearer |
+| Inquiries | `GET/POST /inquiries`, `POST /inquiries/{id}/respond`, `/close` | bearer |
+| Chats | `GET/POST /chats`, `POST /chats/{id}/join`, `/messages`, `/read`, `/close` | bearer |
+| Donations | `GET/POST /donations` | bearer |
+| Feedback | `GET/POST /feedback` | bearer |
+| Real-time | `WS /api/v1/ws/chat?token=<access JWT>` — message / typing / presence / read frames | token query param |
+| Meta | `GET /health` | public |
 
 ## Project layout
 
 ```
 app/
-├── main.py              FastAPI app factory · CORS · /health
+├── main.py                FastAPI app factory · CORS · security headers · error handlers · /health
 ├── core/
-│   ├── config.py        Pydantic Settings (.env-driven)
-│   ├── database.py      Async engine + session + Base
-│   └── security.py      JWT encode/decode + bcrypt hashing
-├── models/              SQLAlchemy models (User, Pet, Quiz, Chat, Resource, Readiness, Reminder)
-├── schemas/             Pydantic request/response DTOs — this is the public contract
-├── api/
-│   ├── deps.py          DbDep, CurrentUserDep
-│   └── v1/              auth, pets, dashboard routers
-├── services/
-│   └── dashboard.py     Aggregation logic (kept out of routers)
-└── seed.py              Idempotent demo seed
-alembic/                 Migrations (env.py wired to async engine)
-Dockerfile               Production image · non-root · runs alembic on start
-railway.toml             Railway build/deploy config
-docker-compose.yml       Local Postgres + API for `docker compose up`
+│   ├── config.py          Pydantic Settings (.env-driven; fails fast on weak prod config)
+│   ├── database.py        Async engine + session + Base (Supabase/pooler-aware)
+│   ├── security.py        JWT encode/decode + bcrypt hashing
+│   ├── totp.py            RFC-6238 TOTP (stdlib only) for vet MFA
+│   └── rate_limit.py      In-memory anti-spam limiter
+├── models/                SQLAlchemy ORM — the domain entities (source of truth for the DB schema)
+├── schemas/               Pydantic request/response DTOs (the public API contract)
+├── domain/                AppController (singleton), AuthManager, EventBus, RBAC permissions, exceptions
+├── services/              Aggregation logic kept out of routers (e.g. dashboard)
+├── realtime/              ConnectionManager (in-memory WS registry + presence)
+├── api/v1/                Routers: auth, dashboard, pets, pet_types, resources, first_aid,
+│                          quizzes, inquiries, chats, donations, feedback, ws
+└── seed.py                Idempotent schema-create + demo seed
+docs/database/             DATABASE.md (ERD + data dictionary) + schema.sql (DDL)
+alembic/                   Production migrations (async engine)
+Dockerfile · railway.toml · docker-compose.yml · SUPABASE.md
 ```
-
-## API surface (v1)
-
-| Method | Path | Auth | Description |
-| --- | --- | --- | --- |
-| `GET`  | `/health` | – | Liveness probe (Railway healthcheck) |
-| `POST` | `/api/v1/auth/register` | – | Create user, returns token pair |
-| `POST` | `/api/v1/auth/login` | – | Email + password → token pair |
-| `POST` | `/api/v1/auth/refresh` | – | Exchange refresh token for a fresh pair |
-| `GET`  | `/api/v1/dashboard` | bearer | Aggregated dashboard payload |
-| `GET`  | `/api/v1/pets` | bearer | List the current user's pets |
-| `POST` | `/api/v1/pets` | bearer | Create a pet |
-| `DELETE` | `/api/v1/pets/{id}` | bearer | Delete a pet |
-
-The OpenAPI schema is auto-generated; consume it at `GET /openapi.json` (e.g. with [openapi-typescript](https://github.com/drwpow/openapi-typescript) in the frontend).
 
 ## Environment variables
 
-| Var | Required | Notes |
-| --- | --- | --- |
-| `DATABASE_URL` | yes | `postgresql+asyncpg://user:pass@host:5432/db` — **must use the asyncpg driver** |
-| `JWT_SECRET` | yes | ≥48 random chars. `python -c "import secrets; print(secrets.token_urlsafe(48))"` |
-| `JWT_ALGORITHM` | no | Defaults to `HS256` |
-| `ACCESS_TOKEN_EXPIRE_MINUTES` | no | Defaults to 30 |
-| `REFRESH_TOKEN_EXPIRE_DAYS` | no | Defaults to 14 |
-| `CORS_ORIGINS` | yes in prod | Comma-separated; must include your Vercel frontend URL |
-| `ENVIRONMENT` | no | `production` hides `/docs` |
+| Var | Required | Default | Notes |
+| --- | --- | --- | --- |
+| `DATABASE_URL` | **yes** | – | `postgresql+asyncpg://…` — must use the **asyncpg** driver |
+| `JWT_SECRET` | **yes** | – | ≥32 random chars (enforced in production) |
+| `ENVIRONMENT` | no | `development` | `production` hides `/docs` & enforces strong secrets/CORS |
+| `CORS_ORIGINS` | prod | `http://localhost:3000` | Comma-separated allow-list; include your Vercel URL |
+| `JWT_ALGORITHM` | no | `HS256` | |
+| `ACCESS_TOKEN_EXPIRE_MINUTES` | no | `30` | |
+| `REFRESH_TOKEN_EXPIRE_DAYS` | no | `14` | |
+| `DB_SSL` | no | auto for Supabase | force TLS to the DB |
+| `DB_STATEMENT_CACHE_SIZE` | no | `0` | keep `0` behind Supabase poolers |
+| `RATE_LIMIT_ENABLED` | no | `true` | disable only in controlled tests |
 
-## Deployment — Railway
+## Verifying it works (assignment evidence)
 
-1. Create a Railway project and attach a Postgres plugin.
-2. Railway injects `DATABASE_URL` using the `postgresql://` scheme. Override it to `postgresql+asyncpg://...` (same host/user/pass), or set it manually from the Postgres plugin's connection variables.
-3. Connect this repo as a service. Railway detects `railway.toml` + `Dockerfile`.
-4. Set `JWT_SECRET`, `CORS_ORIGINS=https://<your-frontend>.vercel.app`, `ENVIRONMENT=production`.
-5. Deploy. The container runs `alembic upgrade head` before starting Uvicorn.
-6. Once deployed, run seed from Railway's shell once: `python -m app.seed`.
+```powershell
+# 1. Health
+curl http://localhost:8000/health                      # {"status":"ok"}
 
-## Best practices baked in
+# 2. Log in as the pet owner (no MFA)
+curl -X POST http://localhost:8000/api/v1/auth/login `
+     -H "Content-Type: application/json" `
+     -d '{"email":"alwin@petaid.com","password":"pet123"}'
+# → returns {access_token, refresh_token, role:"pet_owner", ...}
 
-- Async all the way (SQLAlchemy async + asyncpg + native async routes).
-- Pydantic v2 settings — secrets only via env, never via code.
-- bcrypt password hashing via `passlib`; tokens never log plaintext.
-- Service-layer aggregation (`app/services/`) keeps routers thin.
-- Migrations run on container start; never edit the DB schema directly.
-- Non-root Docker user, slim base image, multi-line CMD with `$PORT` for Railway.
-- Explicit CORS allow-list; no wildcard in production.
-- Idempotent seed — safe to re-run.
+# 3. Browse every endpoint interactively at /docs
+```
 
-## Next steps (not yet implemented)
+## Deployment — Railway + Supabase
 
-- pytest + httpx integration tests
-- Rate limiting (slowapi or starlette-limiter)
-- Structured logging (structlog) + request IDs
-- WebSocket chat threads
-- Quiz scoring endpoint
-- Emergency First Aid step-by-step engine
+1. Create the Supabase project and copy its **session-pooler** connection string (see `SUPABASE.md`).
+2. Create a Railway project, add this repo as a service (it auto-detects `railway.toml` + `Dockerfile`).
+3. Set Railway variables: `DATABASE_URL` (asyncpg form), `JWT_SECRET`, `ENVIRONMENT=production`,
+   `CORS_ORIGINS=https://<your-frontend>.vercel.app`.
+4. Deploy. The container runs `alembic upgrade head` before starting Uvicorn.
+5. Seed once from the Railway shell (or rely on Alembic + manual data): `python -m app.seed`.
+
+> Railway runs a single long-lived process, so WebSockets work out of the box. The in-memory
+> `ConnectionManager`/presence is correct for a single instance; horizontal scaling would add Redis
+> pub/sub behind the same interface (documented, not required for this assignment).
+
+## Coding standard
+
+Python code follows **[PEP 8](https://peps.python.org/pep-0008/)** and
+**[PEP 257](https://peps.python.org/pep-0257/)** (docstring conventions), with type hints throughout
+(PEP 484). Layering (routers → domain/services → models) and the design patterns used
+(Singleton controller, Observer event bus, Adapter payment processor, Repository-style data access)
+are described in [`DESIGN.md`](./DESIGN.md).
