@@ -11,7 +11,7 @@ import uuid
 from datetime import datetime, timezone
 
 from fastapi import APIRouter, Depends, status
-from sqlalchemy import or_, select
+from sqlalchemy import and_, or_, select
 from sqlalchemy.orm import selectinload
 
 from app.api.deps import CurrentAccountDep, CurrentPetOwnerDep, CurrentVetDep, DbDep, require
@@ -29,7 +29,7 @@ from app.domain.permissions import Permission
 from app.models.account import PetOwner, VeterinaryExpert
 from app.models.chat import Chat, ChatMessage, ChatStatus
 from app.realtime.connection_manager import manager
-from app.schemas.common import ChatIn, ChatLastMessage, ChatMessageIn, ChatMessageOut, ChatOut
+from app.schemas.common import ChatIn, ChatLastMessage, ChatMessageIn, ChatMessageOut, ChatOut, VetSummaryOut
 
 router = APIRouter(prefix="/chats", tags=["chats"])
 
@@ -97,8 +97,18 @@ async def _broadcast_chat_update(chat: Chat) -> None:
 @router.post("", response_model=ChatOut, status_code=status.HTTP_201_CREATED, dependencies=[Depends(require(Permission.CHAT_INITIATE))])
 async def start_chat(payload: ChatIn, owner: CurrentPetOwnerDep, db: DbDep) -> ChatOut:
     enforce("chat_create", str(owner.id), max_requests=10, window_seconds=3600)
+    # Optionally direct the chat to a specific veterinary expert. When a target
+    # is set the chat leaves the shared pool and only that expert sees it.
+    target_vet_id = None
+    if payload.vet_id is not None:
+        vet = await db.get(VeterinaryExpert, payload.vet_id)
+        if vet is None or not vet.is_active:
+            raise InvalidInputException("vet_id", "That veterinary expert isn't available.")
+        target_vet_id = vet.id
+
     chat = Chat(
         pet_owner_id=owner.id,
+        vet_id=target_vet_id,
         subject=payload.subject,
         status=ChatStatus.INITIATED,
         started_at=datetime.now(timezone.utc),
@@ -110,12 +120,25 @@ async def start_chat(payload: ChatIn, owner: CurrentPetOwnerDep, db: DbDep) -> C
     get_app_controller().event_bus.publish(
         DomainEvent(channel=CH_CHAT_INITIATED, payload={"chat_id": str(chat.id)})
     )
-    # Surface the new (unassigned) chat to every online vet in real time.
-    await manager.send_to_role(
-        "veterinary_expert",
-        {"type": "chat_new", "chat": _chat_out(chat, owner.id).model_dump(mode="json")},
-    )
+    # Real-time surfacing: a directed chat goes only to the chosen expert; an
+    # undirected one is offered to every online expert (the shared pool).
+    new_frame = {"type": "chat_new", "chat": _chat_out(chat, owner.id).model_dump(mode="json")}
+    if target_vet_id is not None:
+        await manager.send_to_accounts([target_vet_id], new_frame)
+    else:
+        await manager.send_to_role("veterinary_expert", new_frame)
     return _chat_out(chat, owner.id)
+
+
+@router.get("/vets", response_model=list[VetSummaryOut], dependencies=[Depends(require(Permission.CHAT_INITIATE))])
+async def list_vets(owner: CurrentPetOwnerDep, db: DbDep) -> list[VeterinaryExpert]:
+    """Directory of veterinary experts an owner can direct a chat to."""
+    rows = await db.scalars(
+        select(VeterinaryExpert)
+        .where(VeterinaryExpert.is_active.is_(True))
+        .order_by(VeterinaryExpert.full_name)
+    )
+    return list(rows)
 
 
 @router.post("/{chat_id}/join", response_model=ChatOut, dependencies=[Depends(require(Permission.CHAT_JOIN))])
@@ -125,6 +148,9 @@ async def join_chat(chat_id: uuid.UUID, vet: CurrentVetDep, db: DbDep) -> ChatOu
     )
     if chat is None:
         raise NotFoundException("Chat")
+    # A chat directed to a specific expert can only be joined by that expert.
+    if chat.vet_id is not None and chat.vet_id != vet.id:
+        raise NotAuthorisedException("This chat is directed to another veterinary expert.")
     try:
         chat.join(vet_id=vet.id)
     except ValueError as exc:
@@ -140,8 +166,14 @@ async def list_chats(account: CurrentAccountDep, db: DbDep) -> list[ChatOut]:
     if isinstance(account, PetOwner):
         stmt = select(Chat).where(Chat.pet_owner_id == account.id)
     elif isinstance(account, VeterinaryExpert):
+        # A vet sees: chats assigned/directed to them, plus undirected chats in
+        # the shared pool (initiated with no chosen vet). Directed chats stay
+        # private to the chosen vet.
         stmt = select(Chat).where(
-            or_(Chat.vet_id == account.id, Chat.status == ChatStatus.INITIATED)
+            or_(
+                Chat.vet_id == account.id,
+                and_(Chat.status == ChatStatus.INITIATED, Chat.vet_id.is_(None)),
+            )
         )
     else:
         return []

@@ -206,6 +206,19 @@ class InquiryOut(BaseModel):
 
 class ChatIn(BaseModel):
     subject: str = Field(min_length=1, max_length=160)
+    # Optional: direct the chat to a specific veterinary expert. When omitted the
+    # chat goes to the shared pool and any available expert can pick it up.
+    vet_id: uuid.UUID | None = None
+
+
+class VetSummaryOut(BaseModel):
+    """Public-facing directory entry an owner can pick when starting a chat."""
+
+    model_config = ConfigDict(from_attributes=True)
+
+    id: uuid.UUID
+    full_name: str
+    initials: str
 
 
 class ChatMessageIn(BaseModel):
