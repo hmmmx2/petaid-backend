@@ -239,6 +239,10 @@ class ChatMessageIn(BaseModel):
         return v
 
 
+class ChatMessageEdit(BaseModel):
+    body: str = Field(min_length=1, max_length=2000)
+
+
 class ChatMessageOut(BaseModel):
     model_config = ConfigDict(from_attributes=True)
 
@@ -247,6 +251,7 @@ class ChatMessageOut(BaseModel):
     body: str
     image_url: str | None = None
     sent_at: datetime
+    edited: bool = False
 
 
 class ChatLastMessage(BaseModel):

@@ -29,7 +29,7 @@ from app.domain.permissions import Permission
 from app.models.account import PetOwner, VeterinaryExpert
 from app.models.chat import Chat, ChatMessage, ChatStatus
 from app.realtime.connection_manager import manager
-from app.schemas.common import ChatIn, ChatLastMessage, ChatMessageIn, ChatMessageOut, ChatOut, VetSummaryOut
+from app.schemas.common import ChatIn, ChatLastMessage, ChatMessageEdit, ChatMessageIn, ChatMessageOut, ChatOut, VetSummaryOut
 
 router = APIRouter(prefix="/chats", tags=["chats"])
 
@@ -238,6 +238,91 @@ async def post_message(
         },
     )
     return message
+
+
+@router.patch(
+    "/{chat_id}/messages/{message_id}",
+    response_model=ChatMessageOut,
+    dependencies=[Depends(require(Permission.CHAT_PARTICIPATE))],
+)
+async def edit_message(
+    chat_id: uuid.UUID, message_id: uuid.UUID, payload: ChatMessageEdit,
+    account: CurrentAccountDep, db: DbDep,
+) -> ChatMessage:
+    """Edit (Update) one's own message; the peer is notified in real time."""
+    chat = await db.get(Chat, chat_id)
+    if chat is None:
+        raise NotFoundException("Chat")
+    _assert_participant(chat, account)
+    if chat.status == ChatStatus.CLOSED:
+        raise InvalidInputException("status", "Chat is closed.")
+    message = await db.get(ChatMessage, message_id)
+    if message is None or message.chat_id != chat_id:
+        raise NotFoundException("Message")
+    if message.sender_id != account.id:
+        raise NotAuthorisedException("You can only edit your own messages.")
+    message.body = payload.body
+    await db.commit()
+    await db.refresh(message)
+    await manager.send_to_accounts(
+        _participants(chat),
+        {
+            "type": "message_update",
+            "chat_id": str(chat.id),
+            "message": ChatMessageOut.model_validate(message).model_dump(mode="json"),
+        },
+    )
+    return message
+
+
+@router.delete(
+    "/{chat_id}/messages/{message_id}",
+    status_code=status.HTTP_204_NO_CONTENT,
+    dependencies=[Depends(require(Permission.CHAT_PARTICIPATE))],
+)
+async def delete_message(
+    chat_id: uuid.UUID, message_id: uuid.UUID, account: CurrentAccountDep, db: DbDep
+) -> None:
+    """Delete one's own message; the peer is notified in real time."""
+    chat = await db.get(Chat, chat_id)
+    if chat is None:
+        raise NotFoundException("Chat")
+    _assert_participant(chat, account)
+    if chat.status == ChatStatus.CLOSED:
+        raise InvalidInputException("status", "Chat is closed.")
+    message = await db.get(ChatMessage, message_id)
+    if message is None or message.chat_id != chat_id:
+        raise NotFoundException("Message")
+    if message.sender_id != account.id:
+        raise NotAuthorisedException("You can only delete your own messages.")
+    await db.delete(message)
+    await db.commit()
+    await manager.send_to_accounts(
+        _participants(chat),
+        {"type": "message_deleted", "chat_id": str(chat.id), "message_id": str(message_id)},
+    )
+
+
+@router.delete(
+    "/{chat_id}",
+    status_code=status.HTTP_204_NO_CONTENT,
+    dependencies=[Depends(require(Permission.CHAT_VIEW))],
+)
+async def delete_chat(chat_id: uuid.UUID, account: CurrentAccountDep, db: DbDep) -> None:
+    """Delete an entire conversation (and its messages). Either participant may
+    remove it; the other side is notified so their list updates in real time."""
+    chat = await db.scalar(
+        select(Chat).where(Chat.id == chat_id).options(selectinload(Chat.messages))
+    )
+    if chat is None:
+        raise NotFoundException("Chat")
+    _assert_participant(chat, account)
+    recipients = _participants(chat)
+    await db.delete(chat)
+    await db.commit()
+    await manager.send_to_accounts(
+        recipients, {"type": "chat_deleted", "chat_id": str(chat_id)}
+    )
 
 
 @router.post("/{chat_id}/read", response_model=ChatOut, dependencies=[Depends(require(Permission.CHAT_VIEW))])

@@ -110,3 +110,15 @@ class ChatMessage(UUIDPkMixin, TimestampMixin, Base):
 
     chat = relationship("Chat", back_populates="messages")
     sender = relationship("Account", lazy="joined")
+
+    @property
+    def edited(self) -> bool:
+        """True once the message has been edited after sending.
+
+        Derived from the timestamp mixin (no extra column): ``updated_at`` is
+        bumped on every write, so a gap beyond a couple of seconds from
+        ``created_at`` means the body was changed after the initial insert.
+        """
+        if not self.created_at or not self.updated_at:
+            return False
+        return (self.updated_at - self.created_at).total_seconds() > 2
