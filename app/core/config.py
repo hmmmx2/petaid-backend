@@ -38,9 +38,15 @@ class Settings(BaseSettings):
     supabase_service_key: str = Field(default="")
     supabase_storage_bucket: str = Field(default="pet-media")
 
+    # Production frontend origin(s) always allowed in addition to CORS_ORIGINS, so
+    # the deployed app keeps working even if the env var is unset/misconfigured.
+    _ALWAYS_ALLOWED_ORIGINS = ("https://petaid-frontend.vercel.app",)
+
     @property
     def cors_origins_list(self) -> list[str]:
-        return [o.strip() for o in self.cors_origins.split(",") if o.strip()]
+        configured = [o.strip() for o in self.cors_origins.split(",") if o.strip()]
+        # de-dupe, preserve order, and always include the known prod frontend
+        return list(dict.fromkeys([*configured, *self._ALWAYS_ALLOWED_ORIGINS]))
 
     @property
     def is_production(self) -> bool:
