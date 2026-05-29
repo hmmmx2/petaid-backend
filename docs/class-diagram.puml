@@ -1,0 +1,318 @@
+@startuml PetAid-Class-Diagram-A3
+' ============================================================================
+'  PetAid - Class Diagram (Assignment 3, updated to the as-built backend)
+'  Reflects  petaid-backend  (FastAPI + SQLAlchemy).
+'  Items added/changed since the A2 diagram are tagged "(new)" / "(changed)"
+'  in labels, and summarised in the legend at the bottom.
+' ============================================================================
+
+skinparam classAttributeIconSize 0
+skinparam shadowing false
+skinparam linetype ortho
+hide empty members
+
+' ----------------------------------------------------------------------------
+'  CONTROL & AUTH LAYER
+' ----------------------------------------------------------------------------
+package "Control & Auth" {
+
+  class AppController <<singleton>> {
+    + auth_manager : AuthManager
+    + event_bus : EventBus
+    --
+    + create_dashboard(account) : Dashboard
+    + bootstrap()
+  }
+
+  class AuthManager {
+    - failed_attempts : map
+    --
+    + register(data) : PetOwner
+    + authenticate(email, pw, totp) : Account
+    + verify_email(email, code)
+    + request_password_reset(email)
+    + reset_password(email, code, pw)
+    + change_password(account, old, new)
+    + provision_mfa(account) : uri
+    + verify_mfa(account, code)
+    - validate_password_strength(pw)
+    - _make_account(role) : Account
+  }
+
+  class UserCredentials <<data-holder>> {
+    + password_hash : str
+    + mfa_secret : str
+    + email_verified : bool
+  }
+
+  class Permission <<policy>> {
+    {static} matrix : role to permissions
+    --
+    + require(perm)
+  }
+
+  class EventBus <<singleton>> {
+    + subscribe(channel, handler)
+    + publish(channel, payload)
+  }
+
+  class ConnectionManager <<singleton>> {
+    + connect(account, ws)
+    + disconnect(account)
+    + send_to_accounts(ids, msg)
+  }
+}
+
+' ----------------------------------------------------------------------------
+'  PRESENTATION - Dashboards (Template Method, per request)
+' ----------------------------------------------------------------------------
+package "Presentation" {
+
+  abstract class Dashboard <<abstract>> {
+    # account : Account
+    --
+    + render() : DashboardOut
+    {abstract} # _panels() : Panels
+    {abstract} # _user_summary()
+  }
+
+  class PetOwnerDashboard
+  class VeterinaryExpertDashboard
+}
+
+' ----------------------------------------------------------------------------
+'  ACCOUNTS - single-table inheritance, role discriminator
+' ----------------------------------------------------------------------------
+package "Accounts" {
+
+  abstract class Account <<abstract>> {
+    + id : UUID
+    + email : str
+    + full_name : str
+    + role : Role
+    --
+    + display_name() : str
+  }
+
+  class PetOwner <<actor>>
+  class VeterinaryExpert <<actor>>
+}
+
+' ----------------------------------------------------------------------------
+'  DOMAIN ENTITIES
+' ----------------------------------------------------------------------------
+package "Domain Entities" {
+
+  class Pet <<entity>> {
+    + name : str
+    + age_years : int
+    + breed : str
+  }
+
+  class PetType <<entity>> {
+    + name : str
+  }
+
+  class FirstAidGuidance <<entity>> {
+    + title : str
+    + steps : list
+    + emergency_type : str
+  }
+
+  class Quiz <<entity>> {
+    + title : str
+    + passing_score : int
+    --
+    + evaluate(answers) : QuizResult
+  }
+
+  class Feedback <<entity>> {
+    + rating : int
+    + flagged : bool
+    + target_type : enum
+    + target_id : UUID
+  }
+
+  class FeedbackEntry <<data-holder>> {
+    + comment : str
+  }
+
+  class Inquiry <<entity>> {
+    + question : str
+    + status : InquiryStatus
+    --
+    + respond(vet, body)
+    + close()
+  }
+
+  class Chat <<entity>> {
+    + subject : str
+    + status : ChatStatus
+    --
+    + join(vet)
+    + close()
+  }
+
+  class ChatMessage <<entity>> {
+    + body : str
+    + image_url : str
+    + edited : bool
+  }
+
+  class Donation <<entity>> {
+    + amount_cents : int
+    + currency : str
+    + recurring : bool
+    + status : DonationStatus
+  }
+
+  class DonationRecord <<immutable>> {
+    + transaction_ref : str
+    + charged_at : datetime
+  }
+
+  class Resource <<entity>> {
+    + title : str
+    + content_type : str
+    + status : ResourceStatus
+  }
+}
+
+' ----------------------------------------------------------------------------
+'  EXTERNAL COLLABORATORS - Adapter / Strategy
+' ----------------------------------------------------------------------------
+package "External Collaborators" {
+
+  abstract class PaymentProcessor <<abstract>> {
+    + charge(amount, currency) : TransactionResult
+  }
+  class MockPaymentProcessor
+  class FailingPaymentProcessor
+
+  class MediaStorage <<data-holder>> {
+    + accept(file) : url
+    + max_size : int
+    + allowed_ext : set
+  }
+}
+
+' ============================================================================
+'  RELATIONSHIPS
+' ============================================================================
+
+' --- Control wiring ---------------------------------------------------------
+AppController ..> PetOwnerDashboard : creates
+AppController ..> VeterinaryExpertDashboard : creates
+AppController --> "1" AuthManager : owns
+AppController --> "1" EventBus : owns (new)
+AuthManager ..> "1" UserCredentials : reads
+AuthManager ..> Permission : enforces (new)
+AuthManager --> "1" Account : current actor
+
+' --- Dashboards -------------------------------------------------------------
+Dashboard <|-- PetOwnerDashboard
+Dashboard <|-- VeterinaryExpertDashboard
+Dashboard "1" --> "1" Account : displays for (per request)
+
+' --- Account hierarchy + credentials ---------------------------------------
+Account <|-- PetOwner
+Account <|-- VeterinaryExpert
+Account "1" *-- "1" UserCredentials : owns
+
+' --- PetOwner relationships -------------------------------------------------
+PetOwner "1" o-- "1..*" Pet : aggregates
+PetOwner "1" --> "0..*" FirstAidGuidance : takes
+PetOwner "1" --> "0..*" Quiz : takes
+PetOwner "1" --> "0..*" Feedback : creates
+PetOwner "1" --> "0..*" Inquiry : creates
+PetOwner "1" --> "0..*" Chat : initiates
+PetOwner "1" --> "0..*" Donation : creates
+
+' --- VeterinaryExpert relationships ----------------------------------------
+VeterinaryExpert "1" --> "0..*" FirstAidGuidance : manages CRUD
+VeterinaryExpert "1" --> "0..*" Resource : manages CRUD
+VeterinaryExpert "1" --> "0..*" Inquiry : responds to
+VeterinaryExpert "1" --> "0..*" Chat : participates in
+
+' --- PetType classification -------------------------------------------------
+Pet "1..*" --> "1" PetType : classified by
+FirstAidGuidance "1..*" --> "1" PetType : filtered by
+Resource "0..*" --> "1" PetType : grouped by
+
+' --- Entity associations ----------------------------------------------------
+FirstAidGuidance "0..*" --> "0..*" Resource : supported by (changed: M2M)
+Quiz "0..*" --> "1" Resource : linked to
+Feedback "0..1" ..> Resource : targets (xor)
+Feedback "0..1" ..> FirstAidGuidance : targets (new, xor)
+Feedback "1" *-- "1" FeedbackEntry : holds
+
+' --- Chat / messages --------------------------------------------------------
+Chat "1" *-- "0..*" ChatMessage : holds (new)
+ChatMessage "0..*" --> "1" Account : sender (new)
+Chat ..> ConnectionManager : broadcasts via (new)
+
+' --- Donation / payments ----------------------------------------------------
+Donation "1" *-- "1" DonationRecord : records
+Donation ..> "1" PaymentProcessor : delegates to
+PaymentProcessor <|-- MockPaymentProcessor
+PaymentProcessor <|-- FailingPaymentProcessor
+
+' --- Resource / media -------------------------------------------------------
+Resource ..> "1" MediaStorage : validates via
+
+' --- Event publication (Observer) ------------------------------------------
+Inquiry ..> EventBus : publishes (new)
+Chat ..> EventBus : publishes (new)
+Donation ..> EventBus : publishes (new)
+Feedback ..> EventBus : publishes (new)
+
+' ============================================================================
+'  NOTES - design patterns & deviations
+' ============================================================================
+
+note top of AppController
+  Singleton (metaclass).
+  Composition root, started in
+  the FastAPI lifespan.
+end note
+
+note right of Dashboard
+  Template Method: render() is fixed,
+  _panels() is specialised.
+  Built per HTTP request (stateless) -
+  not a persisted 1..1 object.
+end note
+
+note right of AuthManager
+  Factory Method (_make_account).
+  Only PetOwner can self-register;
+  VeterinaryExpert is seed/provisioned.
+  Owns MFA (RFC-6238 TOTP) + lockout.
+end note
+
+note bottom of PaymentProcessor
+  Adapter / Strategy - swappable
+  charge backends behind one interface.
+end note
+
+note bottom of Feedback
+  Polymorphic target (target_type +
+  target_id): a Feedback targets a
+  Resource OR a FirstAidGuidance (xor).
+end note
+
+legend right
+  Tags
+  ====
+  (new)     = in backend, absent from A2 UML
+  (changed) = differs from A2 UML
+  ----
+  Added since A2: ChatMessage, EventBus (Observer),
+  ConnectionManager (WebSocket), Permission (RBAC),
+  PaymentProcessor hierarchy (Adapter).
+  Changed since A2: Feedback polymorphic target,
+  FirstAidGuidance to Resource is many-to-many,
+  Dashboard instantiated per request.
+endlegend
+
+@enduml

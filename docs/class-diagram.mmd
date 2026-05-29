@@ -1,0 +1,174 @@
+classDiagram
+  direction TB
+
+  %% ===== Control & Auth =====
+  class AppController {
+    <<singleton>>
+    +AuthManager auth_manager
+    +EventBus event_bus
+    +create_dashboard(account) Dashboard
+  }
+  class AuthManager {
+    +register(data) PetOwner
+    +authenticate(email, pw, totp) Account
+    -_make_account(role) Account
+  }
+  class UserCredentials {
+    <<data-holder>>
+    +password_hash
+    +mfa_secret
+    +email_verified
+  }
+  class Permission {
+    <<policy>>
+    +require(perm)
+  }
+  class EventBus {
+    <<singleton>>
+    +subscribe(channel, handler)
+    +publish(channel, payload)
+  }
+  class ConnectionManager {
+    <<singleton>>
+    +send_to_accounts(ids, msg)
+  }
+
+  %% ===== Presentation =====
+  class Dashboard {
+    <<abstract>>
+    +render() DashboardOut
+  }
+  class PetOwnerDashboard
+  class VeterinaryExpertDashboard
+
+  %% ===== Accounts =====
+  class Account {
+    <<abstract>>
+    +display_name() str
+  }
+  class PetOwner {
+    <<actor>>
+  }
+  class VeterinaryExpert {
+    <<actor>>
+  }
+
+  %% ===== Domain entities =====
+  class Pet {
+    <<entity>>
+  }
+  class PetType {
+    <<entity>>
+  }
+  class FirstAidGuidance {
+    <<entity>>
+  }
+  class Quiz {
+    <<entity>>
+    +evaluate(answers) QuizResult
+  }
+  class Feedback {
+    <<entity>>
+    +target_type
+    +target_id
+  }
+  class FeedbackEntry {
+    <<data-holder>>
+  }
+  class Inquiry {
+    <<entity>>
+    +respond(vet, body)
+    +close()
+  }
+  class Chat {
+    <<entity>>
+    +join(vet)
+    +close()
+  }
+  class ChatMessage {
+    <<entity>>
+  }
+  class Donation {
+    <<entity>>
+  }
+  class DonationRecord {
+    <<immutable>>
+  }
+  class Resource {
+    <<entity>>
+  }
+
+  %% ===== External collaborators =====
+  class PaymentProcessor {
+    <<abstract>>
+    +charge(amount, currency) TransactionResult
+  }
+  class MockPaymentProcessor
+  class FailingPaymentProcessor
+  class MediaStorage {
+    <<data-holder>>
+  }
+
+  %% ===== Inheritance =====
+  Dashboard <|-- PetOwnerDashboard
+  Dashboard <|-- VeterinaryExpertDashboard
+  Account <|-- PetOwner
+  Account <|-- VeterinaryExpert
+  PaymentProcessor <|-- MockPaymentProcessor
+  PaymentProcessor <|-- FailingPaymentProcessor
+
+  %% ===== Control wiring =====
+  AppController ..> PetOwnerDashboard : creates
+  AppController ..> VeterinaryExpertDashboard : creates
+  AppController --> "1" AuthManager : owns
+  AppController --> "1" EventBus : owns
+  AuthManager ..> UserCredentials : reads
+  AuthManager ..> Permission : enforces
+  AuthManager --> "1" Account : current actor
+  Dashboard --> "1" Account : displays for
+  Account "1" *-- "1" UserCredentials : owns
+
+  %% ===== Pet owner =====
+  PetOwner "1" o-- "1..*" Pet : aggregates
+  PetOwner "1" --> "0..*" FirstAidGuidance : takes
+  PetOwner "1" --> "0..*" Quiz : takes
+  PetOwner "1" --> "0..*" Feedback : creates
+  PetOwner "1" --> "0..*" Inquiry : creates
+  PetOwner "1" --> "0..*" Donation : creates
+  PetOwner "1" --> "0..*" Chat : initiates
+
+  %% ===== Vet expert =====
+  VeterinaryExpert "1" --> "0..*" FirstAidGuidance : manages CRUD
+  VeterinaryExpert "1" --> "0..*" Resource : manages CRUD
+  VeterinaryExpert "1" --> "0..*" Inquiry : responds to
+  VeterinaryExpert "1" --> "0..*" Chat : participates in
+
+  %% ===== Classification =====
+  Pet "1..*" --> "1" PetType : classified by
+  FirstAidGuidance "1..*" --> "1" PetType : filtered by
+  Resource "0..*" --> "1" PetType : grouped by
+
+  %% ===== Entity links =====
+  FirstAidGuidance "0..*" --> "0..*" Resource : supported by
+  Quiz "0..*" --> "1" Resource : linked to
+  Feedback "0..1" ..> Resource : targets
+  Feedback "0..1" ..> FirstAidGuidance : targets
+  Feedback "1" *-- "1" FeedbackEntry : holds
+
+  %% ===== Chat =====
+  Chat "1" *-- "0..*" ChatMessage : holds
+  ChatMessage "0..*" --> "1" Account : sender
+  Chat ..> ConnectionManager : broadcasts via
+
+  %% ===== Donation =====
+  Donation "1" *-- "1" DonationRecord : records
+  Donation ..> "1" PaymentProcessor : delegates to
+
+  %% ===== Media =====
+  Resource ..> "1" MediaStorage : validates via
+
+  %% ===== Observer (event publication) =====
+  Inquiry ..> EventBus : publishes
+  Chat ..> EventBus : publishes
+  Donation ..> EventBus : publishes
+  Feedback ..> EventBus : publishes
