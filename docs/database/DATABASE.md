@@ -398,6 +398,9 @@ Every foreign key is indexed (lookup/join performance) plus:
   `donation_records.donation_id`, `donation_records.transaction_ref`, `feedback_entries.feedback_id`.
 - **Filter indexes:** `accounts.role`, `*.status` (chats/inquiries/resources/donations),
   `first_aid_guidance.emergency_type`, `feedback.flagged`, `feedback.resource_id`.
+- **Reverse M:N lookup:** `first_aid_resource_link.resource_id` — the composite PK
+  `(guidance_id, resource_id)` covers guidance-leading lookups; this secondary index
+  covers "all guidance for a resource X".
 
 ---
 

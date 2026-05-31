@@ -244,12 +244,15 @@ CREATE TABLE feedback_entries (
 CREATE UNIQUE INDEX ix_feedback_entries_feedback_id ON feedback_entries (feedback_id);
 
 CREATE TABLE first_aid_resource_link (
-	guidance_id UUID NOT NULL, 
-	resource_id UUID NOT NULL, 
-	PRIMARY KEY (guidance_id, resource_id), 
-	FOREIGN KEY(guidance_id) REFERENCES first_aid_guidance (id) ON DELETE CASCADE, 
+	guidance_id UUID NOT NULL,
+	resource_id UUID NOT NULL,
+	PRIMARY KEY (guidance_id, resource_id),
+	FOREIGN KEY(guidance_id) REFERENCES first_aid_guidance (id) ON DELETE CASCADE,
 	FOREIGN KEY(resource_id) REFERENCES resources (id) ON DELETE CASCADE
 );
+-- Composite PK covers guidance-leading lookups; this secondary index covers the
+-- reverse "all guidance for a resource" query.
+CREATE INDEX ix_first_aid_resource_link_resource_id ON first_aid_resource_link (resource_id);
 
 CREATE TABLE quizzes (
 	resource_id UUID NOT NULL, 

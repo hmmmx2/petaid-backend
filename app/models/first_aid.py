@@ -8,7 +8,7 @@ from __future__ import annotations
 
 import uuid
 
-from sqlalchemy import Column, ForeignKey, String, Table, Text
+from sqlalchemy import Column, ForeignKey, Index, String, Table, Text
 from sqlalchemy.dialects.postgresql import JSONB, UUID
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
@@ -31,6 +31,10 @@ first_aid_resource_link = Table(
         ForeignKey("resources.id", ondelete="CASCADE"),
         primary_key=True,
     ),
+    # The composite PK (guidance_id, resource_id) indexes guidance-leading
+    # lookups; this secondary index covers the reverse "all guidance for a
+    # resource" query so it doesn't scan the whole link table.
+    Index("ix_first_aid_resource_link_resource_id", "resource_id"),
 )
 
 
