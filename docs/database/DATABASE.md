@@ -23,7 +23,7 @@ The Assignment 2 class model is preserved 1:1 in the database using standard OO�
 | **Aggregation** — `PetOwner ◇— Pet`, owner ◇— Inquiry/Chat/Donation/QuizAttempt/Feedback | Plain foreign key to the owning `accounts.id`. |
 | **Association (1‑to‑many)** — `Chat —< ChatMessage`, `Quiz —< QuizAttempt` | Foreign key on the “many” side. |
 | **Association (many‑to‑many)** — `FirstAidGuidance >—< Resource` | Junction table `first_aid_resource_link` with a composite primary key. |
-| **Polymorphic association** — `Feedback → (Resource | FirstAidGuidance)` | `(target_type, target_id)` pair (discriminator + UUID), mirroring the UML’s polymorphic link. |
+| **Targeted association** — `Feedback → Resource` (0..1) | A single nullable **foreign key** `resource_id → resources` (`ON DELETE CASCADE`). Preserves referential integrity — the resource must exist and feedback cascades when it is deleted — matching the UML, instead of a bare polymorphic UUID. |
 | **Value-object collections** — guidance `steps`, quiz `questions`, attempt `answers`, inquiry `image_urls` | Stored as **`JSONB`** columns. The SRS 2.2.3 simplification justifies collapsing ordered/owned value lists into the parent rather than creating child tables whose only purpose is a `position` column. |
 | **State machines** — Inquiry, Chat, Resource, Donation lifecycles | `status` column constrained by a `CHECK` to the legal enum values; transitions are enforced by entity methods (`inquiry.respond()`, `chat.join()`, …). |
 
@@ -157,8 +157,7 @@ erDiagram
     feedback {
         uuid id PK
         uuid submitter_id FK
-        varchar target_type "resource | guidance"
-        uuid target_id
+        uuid resource_id FK "nullable (target, 0..1)"
         bool flagged
     }
     feedback_entries {
@@ -359,9 +358,10 @@ Physically separated so password/MFA columns are isolated; only `AuthManager` re
 | --- | --- | --- | --- |
 | id | uuid | PK | |
 | submitter_id | uuid | FK→accounts, NN | (cascade) |
-| target_type | varchar(8) | NN, indexed, CHECK | `resource` \| `guidance` |
-| target_id | uuid | NN, indexed | UUID of the targeted content |
+| resource_id | uuid | FK→resources, nullable, indexed | The rated Resource (UML: targets 0..1); `ON DELETE CASCADE` |
 | flagged | boolean | NN, indexed | Needs vet review |
+
+> `(target_type, target_id)` are exposed by the API as derived read-only fields (`target_type` is always `resource`; `target_id` = `resource_id`).
 
 ### 3.16 `feedback_entries` — rating & comment (composition, 1:1; SRS 3.3.22)
 
@@ -384,6 +384,7 @@ Physically separated so password/MFA columns are isolated; only `AuthManager` re
 | pet_types | pets, resources, first_aid_guidance | **RESTRICT** | A classification in use cannot be deleted. |
 | donations | donation_records | CASCADE | Composition. |
 | feedback | feedback_entries | CASCADE | Composition. |
+| resources | feedback | CASCADE | Feedback is removed with the resource it targets (via `resource_id`). |
 | chats | chat_messages | CASCADE | A thread owns its messages. |
 | first_aid_guidance / resources | first_aid_resource_link | CASCADE | Junction rows clean up with either side. |
 
@@ -396,7 +397,7 @@ Every foreign key is indexed (lookup/join performance) plus:
 - **Unique:** `pet_types.name`, `user_credentials.email`, `user_credentials.account_id`,
   `donation_records.donation_id`, `donation_records.transaction_ref`, `feedback_entries.feedback_id`.
 - **Filter indexes:** `accounts.role`, `*.status` (chats/inquiries/resources/donations),
-  `first_aid_guidance.emergency_type`, `feedback.flagged`, `feedback.target_type`, `feedback.target_id`.
+  `first_aid_guidance.emergency_type`, `feedback.flagged`, `feedback.resource_id`.
 
 ---
 

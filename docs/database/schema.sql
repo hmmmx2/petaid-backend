@@ -18,7 +18,8 @@
 --    * Aggregation (Pet, Inquiry, Chat, Donation, QuizAttempt, Feedback) -> FK
 --      to the owning Account.
 --    * Many-to-many (FirstAidGuidance <-> Resource) -> `first_aid_resource_link`.
---    * Polymorphic Feedback target -> (target_type, target_id) pair.
+--    * Feedback target (UML: Feedback -> Resource, 0..1) -> a single nullable
+--      FK `resource_id` -> resources (referential integrity preserved).
 --    * Value-object lists (steps, questions, answers, image_urls) -> JSONB.
 --  UUID primary keys default to gen_random_uuid(); the application also
 --  supplies its own UUIDs, so either insert path works.
@@ -89,20 +90,19 @@ CREATE INDEX ix_donations_pet_owner_id ON donations (pet_owner_id);
 CREATE INDEX ix_donations_status ON donations (status);
 
 CREATE TABLE feedback (
-	submitter_id UUID NOT NULL, 
-	target_type VARCHAR(8) NOT NULL, 
-	target_id UUID NOT NULL, 
-	flagged BOOLEAN NOT NULL, 
-	id UUID NOT NULL DEFAULT gen_random_uuid(), 
-	created_at TIMESTAMP WITH TIME ZONE DEFAULT now() NOT NULL, 
-	updated_at TIMESTAMP WITH TIME ZONE DEFAULT now() NOT NULL, 
-	PRIMARY KEY (id), 
+	submitter_id UUID NOT NULL,
+	resource_id UUID,
+	flagged BOOLEAN NOT NULL,
+	id UUID NOT NULL DEFAULT gen_random_uuid(),
+	created_at TIMESTAMP WITH TIME ZONE DEFAULT now() NOT NULL,
+	updated_at TIMESTAMP WITH TIME ZONE DEFAULT now() NOT NULL,
+	PRIMARY KEY (id),
 	FOREIGN KEY(submitter_id) REFERENCES accounts (id) ON DELETE CASCADE
+	-- resource_id FK is added near the bottom: `resources` is created later.
 );
 CREATE INDEX ix_feedback_flagged ON feedback (flagged);
 CREATE INDEX ix_feedback_submitter_id ON feedback (submitter_id);
-CREATE INDEX ix_feedback_target_id ON feedback (target_id);
-CREATE INDEX ix_feedback_target_type ON feedback (target_type);
+CREATE INDEX ix_feedback_resource_id ON feedback (resource_id);
 
 CREATE TABLE first_aid_guidance (
 	pet_type_id UUID NOT NULL, 
@@ -291,7 +291,17 @@ alter table chats             add constraint ck_chats_status         check (stat
 alter table inquiries         add constraint ck_inquiries_status     check (status in ('pending','responded','closed'));
 alter table resources         add constraint ck_resources_status     check (status in ('draft','published'));
 alter table donations         add constraint ck_donations_status     check (status in ('pending','succeeded','failed'));
-alter table feedback          add constraint ck_feedback_target      check (target_type in ('resource','guidance'));
 alter table feedback_entries  add constraint ck_feedback_rating      check (rating between 1 and 5);
 alter table quiz_attempts     add constraint ck_quiz_attempts_score  check (score_pct between 0 and 100);
+
+-- Feedback target (UML: Feedback -> Resource, 0..1) — a real FK gives full
+-- referential integrity (the resource must exist, and feedback cascades when
+-- the resource is deleted), unlike a bare polymorphic target_id UUID. Defined
+-- here because `resources` is created after `feedback`.
+alter table feedback add constraint fk_feedback_resource foreign key (resource_id) references resources (id) on delete cascade;
+
+-- Additional value-range guards (mirror the application-layer validation).
+alter table donations add constraint ck_donations_amount        check (amount_cents > 0);
+alter table resources add constraint ck_resources_content_type  check (content_type in ('video','pdf','images'));
+alter table pets      add constraint ck_pets_age                check (age_years is null or age_years between 0 and 80);
 

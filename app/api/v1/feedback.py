@@ -10,7 +10,7 @@ from app.core.rate_limit import enforce
 from app.domain.permissions import Permission
 from app.domain.app_controller import get_app_controller
 from app.domain.events import CH_FEEDBACK_FLAGGED, CH_FEEDBACK_SUBMITTED, DomainEvent
-from app.models.feedback import Feedback, FeedbackEntry, FeedbackTargetType
+from app.models.feedback import Feedback, FeedbackEntry
 from app.schemas.common import FeedbackIn, FeedbackOut
 
 router = APIRouter(prefix="/feedback", tags=["feedback"])
@@ -34,10 +34,10 @@ async def submit_feedback(
 ) -> FeedbackOut:
     # Anti-spam: cap feedback submissions per owner.
     enforce("feedback_create", str(owner.id), max_requests=20, window_seconds=3600)
+    # UML: Feedback targets a Resource. The FK preserves referential integrity.
     feedback = Feedback(
         submitter_id=owner.id,
-        target_type=FeedbackTargetType(payload.target_type),
-        target_id=payload.target_id,
+        resource_id=payload.target_id,
         flagged=payload.flagged,
     )
     db.add(feedback)

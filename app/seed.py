@@ -27,7 +27,7 @@ from app.models.account import PetOwner, VeterinaryExpert
 from app.models.chat import Chat, ChatStatus
 from app.models.credentials import UserCredentials
 from app.models.donation import Donation, DonationRecord, DonationStatus
-from app.models.feedback import Feedback, FeedbackEntry, FeedbackTargetType
+from app.models.feedback import Feedback, FeedbackEntry
 from app.models.first_aid import FirstAidGuidance
 from app.models.inquiry import Inquiry, InquiryStatus
 from app.models.pet import Pet
@@ -313,8 +313,7 @@ async def seed() -> None:
 
         # --- Feedback (composed entry) --------------------------------- #
         feedback = Feedback(submitter_id=owner.id,
-                            target_type=FeedbackTargetType.RESOURCE,
-                            target_id=r_cpr.id, flagged=False)
+                            resource_id=r_cpr.id, flagged=False)
         db.add(feedback)
         await db.flush()
         db.add(FeedbackEntry(feedback_id=feedback.id, rating=5,

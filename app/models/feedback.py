@@ -1,17 +1,19 @@
 """Feedback and FeedbackEntry (SRS 3.3.19, 3.3.22).
 
-``Feedback`` references the target entity (either a Resource or a
-FirstAidGuidance — modelled with a discriminator column and a UUID
-``target_id``, mirroring the UML where the association is polymorphic).
-``FeedbackEntry`` is a composed data-holder containing the rating and
-comment.
+Per the UML, ``Feedback`` targets a single ``Resource`` (0..1), realised as a
+nullable ``resource_id`` foreign key with ``ON DELETE CASCADE`` — so the target
+is guaranteed to exist and feedback is removed with the resource it rates
+(unlike a bare polymorphic ``target_id`` UUID). ``target_type`` / ``target_id``
+are kept as derived, read-only properties so the API, dashboards and UI keep a
+single, simple shape. ``FeedbackEntry`` is the composed data-holder holding the
+rating and comment.
 """
 from __future__ import annotations
 
 import enum
 import uuid
 
-from sqlalchemy import Enum, ForeignKey, Integer, String, Text
+from sqlalchemy import ForeignKey, Integer, Text
 from sqlalchemy.dialects.postgresql import UUID
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
@@ -20,10 +22,9 @@ from app.models.mixins import TimestampMixin, UUIDPkMixin
 
 
 class FeedbackTargetType(str, enum.Enum):
-    """Type of content the feedback targets."""
+    """Type of content the feedback targets (currently always RESOURCE)."""
 
     RESOURCE = "resource"
-    GUIDANCE = "guidance"
 
 
 class Feedback(UUIDPkMixin, TimestampMixin, Base):
@@ -36,10 +37,13 @@ class Feedback(UUIDPkMixin, TimestampMixin, Base):
         nullable=False,
     )
 
-    target_type: Mapped[FeedbackTargetType] = mapped_column(
-        Enum(FeedbackTargetType, native_enum=False), nullable=False, index=True
+    # Target (UML: Feedback -> Resource, 0..1). A real FK preserves integrity.
+    resource_id: Mapped[uuid.UUID | None] = mapped_column(
+        UUID(as_uuid=True),
+        ForeignKey("resources.id", ondelete="CASCADE"),
+        nullable=True,
+        index=True,
     )
-    target_id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), nullable=False, index=True)
 
     flagged: Mapped[bool] = mapped_column(nullable=False, default=False, index=True)
 
@@ -52,6 +56,15 @@ class Feedback(UUIDPkMixin, TimestampMixin, Base):
         cascade="all, delete-orphan",
         passive_deletes=True,
     )
+
+    # --- derived view: keep a stable (target_type, target_id) shape -------- #
+    @property
+    def target_type(self) -> FeedbackTargetType:
+        return FeedbackTargetType.RESOURCE
+
+    @property
+    def target_id(self) -> uuid.UUID | None:
+        return self.resource_id
 
 
 class FeedbackEntry(UUIDPkMixin, TimestampMixin, Base):
