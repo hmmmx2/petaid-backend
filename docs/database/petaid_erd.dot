@@ -1,0 +1,267 @@
+digraph PetAid_ERD {
+  graph [rankdir=LR splines=ortho nodesep=0.75 ranksep=2.0 fontname=Helvetica bgcolor=white pad=0.5
+         label="PetAid - Entity-Relationship Diagram (SWE30003 Assignment 3)\n[PK] primary key   [FK] foreign key   UNIQUE/NULL noted inline   |   edge colour = ON DELETE action (see legend)"
+         labelloc=t labeljust=c fontsize=13]
+  node  [shape=none margin=0]
+  edge  [fontname=Helvetica fontsize=8 penwidth=1.7 arrowsize=0.8 arrowhead=vee]
+
+  subgraph cluster_id {
+    label="Identity and Auth" style=dashed color="#9f7aea" fontsize=10 fontname=Helvetica bgcolor=white
+
+    accounts [label=<
+      <TABLE BORDER="0" CELLBORDER="1" CELLSPACING="0" CELLPADDING="4">
+      <TR><TD BGCOLOR="#2d3748" ALIGN="CENTER"><FONT COLOR="white" FACE="Helvetica" POINT-SIZE="11"><B>accounts</B></FONT></TD></TR>
+      <TR><TD ALIGN="LEFT" BGCOLOR="#ebf8ff"><FONT FACE="Helvetica" POINT-SIZE="9"><B>[PK]</B> <B>id</B>  <FONT COLOR="#718096">uuid</FONT></FONT></TD></TR>
+      <TR><TD ALIGN="LEFT" BGCOLOR="#f7fafc"><FONT FACE="Helvetica" POINT-SIZE="9"><B>full_name</B>  <FONT COLOR="#718096">varchar(120)</FONT></FONT></TD></TR>
+      <TR><TD ALIGN="LEFT" BGCOLOR="#edf2f7"><FONT FACE="Helvetica" POINT-SIZE="9"><B>initials</B>  <FONT COLOR="#718096">varchar(4)</FONT></FONT></TD></TR>
+      <TR><TD ALIGN="LEFT" BGCOLOR="#f7fafc"><FONT FACE="Helvetica" POINT-SIZE="9"><B>is_active</B>  <FONT COLOR="#718096">boolean</FONT></FONT></TD></TR>
+      <TR><TD ALIGN="LEFT" BGCOLOR="#edf2f7"><FONT FACE="Helvetica" POINT-SIZE="9"><B>email_verified</B>  <FONT COLOR="#718096">boolean</FONT></FONT></TD></TR>
+      <TR><TD ALIGN="LEFT" BGCOLOR="#f7fafc"><FONT FACE="Helvetica" POINT-SIZE="9"><B>role</B>  <FONT COLOR="#718096">varchar(40) CHECK(pet_owner|vet_expert)</FONT></FONT></TD></TR>
+      <TR><TD ALIGN="LEFT" BGCOLOR="#edf2f7"><FONT FACE="Helvetica" POINT-SIZE="9"><B>created_at / updated_at</B>  <FONT COLOR="#718096">timestamptz</FONT></FONT></TD></TR>
+      <TR><TD ALIGN="LEFT" BGCOLOR="#fffbeb"><FONT FACE="Helvetica" POINT-SIZE="8" COLOR="#92400e"><I>STI root -- role is discriminator</I></FONT></TD></TR>
+      </TABLE>>]
+
+    user_credentials [label=<
+      <TABLE BORDER="0" CELLBORDER="1" CELLSPACING="0" CELLPADDING="4">
+      <TR><TD BGCOLOR="#2d3748" ALIGN="CENTER"><FONT COLOR="white" FACE="Helvetica" POINT-SIZE="11"><B>user_credentials</B></FONT></TD></TR>
+      <TR><TD ALIGN="LEFT" BGCOLOR="#ebf8ff"><FONT FACE="Helvetica" POINT-SIZE="9"><B>[PK]</B> <B>id</B>  <FONT COLOR="#718096">uuid</FONT></FONT></TD></TR>
+      <TR><TD ALIGN="LEFT" BGCOLOR="#fef9c3"><FONT FACE="Helvetica" POINT-SIZE="9"><B>[FK]</B> <B>account_id</B>  <FONT COLOR="#718096">uuid UNIQUE</FONT></FONT></TD></TR>
+      <TR><TD ALIGN="LEFT" BGCOLOR="#edf2f7"><FONT FACE="Helvetica" POINT-SIZE="9"><B>email</B>  <FONT COLOR="#718096">varchar(255) UNIQUE</FONT></FONT></TD></TR>
+      <TR><TD ALIGN="LEFT" BGCOLOR="#f7fafc"><FONT FACE="Helvetica" POINT-SIZE="9"><B>hashed_password</B>  <FONT COLOR="#718096">varchar(255)</FONT></FONT></TD></TR>
+      <TR><TD ALIGN="LEFT" BGCOLOR="#edf2f7"><FONT FACE="Helvetica" POINT-SIZE="9"><B>mfa_enabled</B>  <FONT COLOR="#718096">boolean</FONT></FONT></TD></TR>
+      <TR><TD ALIGN="LEFT" BGCOLOR="#f7fafc"><FONT FACE="Helvetica" POINT-SIZE="9"><B>mfa_secret</B>  <FONT COLOR="#718096">varchar(64) NULL</FONT></FONT></TD></TR>
+      <TR><TD ALIGN="LEFT" BGCOLOR="#edf2f7"><FONT FACE="Helvetica" POINT-SIZE="9"><B>failed_attempts</B>  <FONT COLOR="#718096">integer</FONT></FONT></TD></TR>
+      <TR><TD ALIGN="LEFT" BGCOLOR="#f7fafc"><FONT FACE="Helvetica" POINT-SIZE="9"><B>locked_until</B>  <FONT COLOR="#718096">timestamptz NULL</FONT></FONT></TD></TR>
+      <TR><TD ALIGN="LEFT" BGCOLOR="#edf2f7"><FONT FACE="Helvetica" POINT-SIZE="9"><B>created_at / updated_at</B>  <FONT COLOR="#718096">timestamptz</FONT></FONT></TD></TR>
+      <TR><TD ALIGN="LEFT" BGCOLOR="#fffbeb"><FONT FACE="Helvetica" POINT-SIZE="8" COLOR="#92400e"><I>1:1 composition &lt;- accounts (CASCADE)</I></FONT></TD></TR>
+      </TABLE>>]
+  }
+
+  subgraph cluster_ani {
+    label="Pets and Types" style=dashed color="#38a169" fontsize=10 fontname=Helvetica bgcolor=white
+
+    pet_types [label=<
+      <TABLE BORDER="0" CELLBORDER="1" CELLSPACING="0" CELLPADDING="4">
+      <TR><TD BGCOLOR="#2d3748" ALIGN="CENTER"><FONT COLOR="white" FACE="Helvetica" POINT-SIZE="11"><B>pet_types</B></FONT></TD></TR>
+      <TR><TD ALIGN="LEFT" BGCOLOR="#ebf8ff"><FONT FACE="Helvetica" POINT-SIZE="9"><B>[PK]</B> <B>id</B>  <FONT COLOR="#718096">uuid</FONT></FONT></TD></TR>
+      <TR><TD ALIGN="LEFT" BGCOLOR="#f7fafc"><FONT FACE="Helvetica" POINT-SIZE="9"><B>name</B>  <FONT COLOR="#718096">varchar(60) UNIQUE</FONT></FONT></TD></TR>
+      <TR><TD ALIGN="LEFT" BGCOLOR="#edf2f7"><FONT FACE="Helvetica" POINT-SIZE="9"><B>description / icon_emoji / icon_bg</B>  <FONT COLOR="#718096">varchar</FONT></FONT></TD></TR>
+      <TR><TD ALIGN="LEFT" BGCOLOR="#f7fafc"><FONT FACE="Helvetica" POINT-SIZE="9"><B>sort_order</B>  <FONT COLOR="#718096">integer</FONT></FONT></TD></TR>
+      <TR><TD ALIGN="LEFT" BGCOLOR="#edf2f7"><FONT FACE="Helvetica" POINT-SIZE="9"><B>created_at / updated_at</B>  <FONT COLOR="#718096">timestamptz</FONT></FONT></TD></TR>
+      </TABLE>>]
+
+    pets [label=<
+      <TABLE BORDER="0" CELLBORDER="1" CELLSPACING="0" CELLPADDING="4">
+      <TR><TD BGCOLOR="#2d3748" ALIGN="CENTER"><FONT COLOR="white" FACE="Helvetica" POINT-SIZE="11"><B>pets</B></FONT></TD></TR>
+      <TR><TD ALIGN="LEFT" BGCOLOR="#ebf8ff"><FONT FACE="Helvetica" POINT-SIZE="9"><B>[PK]</B> <B>id</B>  <FONT COLOR="#718096">uuid</FONT></FONT></TD></TR>
+      <TR><TD ALIGN="LEFT" BGCOLOR="#fef9c3"><FONT FACE="Helvetica" POINT-SIZE="9"><B>[FK]</B> <B>owner_id</B>  <FONT COLOR="#718096">uuid -&gt; accounts</FONT></FONT></TD></TR>
+      <TR><TD ALIGN="LEFT" BGCOLOR="#fef9c3"><FONT FACE="Helvetica" POINT-SIZE="9"><B>[FK]</B> <B>pet_type_id</B>  <FONT COLOR="#718096">uuid -&gt; pet_types</FONT></FONT></TD></TR>
+      <TR><TD ALIGN="LEFT" BGCOLOR="#edf2f7"><FONT FACE="Helvetica" POINT-SIZE="9"><B>name</B>  <FONT COLOR="#718096">varchar(80)</FONT></FONT></TD></TR>
+      <TR><TD ALIGN="LEFT" BGCOLOR="#f7fafc"><FONT FACE="Helvetica" POINT-SIZE="9"><B>breed</B>  <FONT COLOR="#718096">varchar(80) NULL</FONT></FONT></TD></TR>
+      <TR><TD ALIGN="LEFT" BGCOLOR="#edf2f7"><FONT FACE="Helvetica" POINT-SIZE="9"><B>age_years</B>  <FONT COLOR="#718096">integer CHECK(0..80) NULL</FONT></FONT></TD></TR>
+      <TR><TD ALIGN="LEFT" BGCOLOR="#f7fafc"><FONT FACE="Helvetica" POINT-SIZE="9"><B>health_notes</B>  <FONT COLOR="#718096">text</FONT></FONT></TD></TR>
+      <TR><TD ALIGN="LEFT" BGCOLOR="#edf2f7"><FONT FACE="Helvetica" POINT-SIZE="9"><B>image_url</B>  <FONT COLOR="#718096">text NULL</FONT></FONT></TD></TR>
+      <TR><TD ALIGN="LEFT" BGCOLOR="#f7fafc"><FONT FACE="Helvetica" POINT-SIZE="9"><B>created_at / updated_at</B>  <FONT COLOR="#718096">timestamptz</FONT></FONT></TD></TR>
+      </TABLE>>]
+  }
+
+  subgraph cluster_cnt {
+    label="First-Aid Content" style=dashed color="#dd6b20" fontsize=10 fontname=Helvetica bgcolor=white
+
+    first_aid_guidance [label=<
+      <TABLE BORDER="0" CELLBORDER="1" CELLSPACING="0" CELLPADDING="4">
+      <TR><TD BGCOLOR="#2d3748" ALIGN="CENTER"><FONT COLOR="white" FACE="Helvetica" POINT-SIZE="11"><B>first_aid_guidance</B></FONT></TD></TR>
+      <TR><TD ALIGN="LEFT" BGCOLOR="#ebf8ff"><FONT FACE="Helvetica" POINT-SIZE="9"><B>[PK]</B> <B>id</B>  <FONT COLOR="#718096">uuid</FONT></FONT></TD></TR>
+      <TR><TD ALIGN="LEFT" BGCOLOR="#fef9c3"><FONT FACE="Helvetica" POINT-SIZE="9"><B>[FK]</B> <B>pet_type_id</B>  <FONT COLOR="#718096">uuid RESTRICT</FONT></FONT></TD></TR>
+      <TR><TD ALIGN="LEFT" BGCOLOR="#fef9c3"><FONT FACE="Helvetica" POINT-SIZE="9"><B>[FK]</B> <B>author_id</B>  <FONT COLOR="#718096">uuid RESTRICT</FONT></FONT></TD></TR>
+      <TR><TD ALIGN="LEFT" BGCOLOR="#edf2f7"><FONT FACE="Helvetica" POINT-SIZE="9"><B>title</B>  <FONT COLOR="#718096">varchar(160)</FONT></FONT></TD></TR>
+      <TR><TD ALIGN="LEFT" BGCOLOR="#f7fafc"><FONT FACE="Helvetica" POINT-SIZE="9"><B>emergency_type</B>  <FONT COLOR="#718096">varchar(60)</FONT></FONT></TD></TR>
+      <TR><TD ALIGN="LEFT" BGCOLOR="#edf2f7"><FONT FACE="Helvetica" POINT-SIZE="9"><B>summary</B>  <FONT COLOR="#718096">text</FONT></FONT></TD></TR>
+      <TR><TD ALIGN="LEFT" BGCOLOR="#f7fafc"><FONT FACE="Helvetica" POINT-SIZE="9"><B>steps</B>  <FONT COLOR="#718096">jsonb</FONT></FONT></TD></TR>
+      <TR><TD ALIGN="LEFT" BGCOLOR="#edf2f7"><FONT FACE="Helvetica" POINT-SIZE="9"><B>created_at / updated_at</B>  <FONT COLOR="#718096">timestamptz</FONT></FONT></TD></TR>
+      </TABLE>>]
+
+    resources [label=<
+      <TABLE BORDER="0" CELLBORDER="1" CELLSPACING="0" CELLPADDING="4">
+      <TR><TD BGCOLOR="#2d3748" ALIGN="CENTER"><FONT COLOR="white" FACE="Helvetica" POINT-SIZE="11"><B>resources</B></FONT></TD></TR>
+      <TR><TD ALIGN="LEFT" BGCOLOR="#ebf8ff"><FONT FACE="Helvetica" POINT-SIZE="9"><B>[PK]</B> <B>id</B>  <FONT COLOR="#718096">uuid</FONT></FONT></TD></TR>
+      <TR><TD ALIGN="LEFT" BGCOLOR="#fef9c3"><FONT FACE="Helvetica" POINT-SIZE="9"><B>[FK]</B> <B>pet_type_id</B>  <FONT COLOR="#718096">uuid RESTRICT</FONT></FONT></TD></TR>
+      <TR><TD ALIGN="LEFT" BGCOLOR="#fef9c3"><FONT FACE="Helvetica" POINT-SIZE="9"><B>[FK]</B> <B>author_id</B>  <FONT COLOR="#718096">uuid RESTRICT</FONT></FONT></TD></TR>
+      <TR><TD ALIGN="LEFT" BGCOLOR="#edf2f7"><FONT FACE="Helvetica" POINT-SIZE="9"><B>title</B>  <FONT COLOR="#718096">varchar(160)</FONT></FONT></TD></TR>
+      <TR><TD ALIGN="LEFT" BGCOLOR="#f7fafc"><FONT FACE="Helvetica" POINT-SIZE="9"><B>content_type</B>  <FONT COLOR="#718096">varchar(20) CHECK(video|pdf|images)</FONT></FONT></TD></TR>
+      <TR><TD ALIGN="LEFT" BGCOLOR="#edf2f7"><FONT FACE="Helvetica" POINT-SIZE="9"><B>media_path</B>  <FONT COLOR="#718096">varchar(500) NULL</FONT></FONT></TD></TR>
+      <TR><TD ALIGN="LEFT" BGCOLOR="#f7fafc"><FONT FACE="Helvetica" POINT-SIZE="9"><B>status</B>  <FONT COLOR="#718096">varchar(9) CHECK(draft|published)</FONT></FONT></TD></TR>
+      <TR><TD ALIGN="LEFT" BGCOLOR="#edf2f7"><FONT FACE="Helvetica" POINT-SIZE="9"><B>created_at / updated_at</B>  <FONT COLOR="#718096">timestamptz</FONT></FONT></TD></TR>
+      </TABLE>>]
+
+    first_aid_resource_link [label=<
+      <TABLE BORDER="0" CELLBORDER="1" CELLSPACING="0" CELLPADDING="4">
+      <TR><TD BGCOLOR="#2d3748" ALIGN="CENTER"><FONT COLOR="white" FACE="Helvetica" POINT-SIZE="11"><B>first_aid_resource_link</B></FONT></TD></TR>
+      <TR><TD ALIGN="LEFT" BGCOLOR="#ebf8ff"><FONT FACE="Helvetica" POINT-SIZE="9"><B>[PK][FK]</B> <B>guidance_id</B>  <FONT COLOR="#718096">uuid</FONT></FONT></TD></TR>
+      <TR><TD ALIGN="LEFT" BGCOLOR="#ebf8ff"><FONT FACE="Helvetica" POINT-SIZE="9"><B>[PK][FK]</B> <B>resource_id</B>  <FONT COLOR="#718096">uuid</FONT></FONT></TD></TR>
+      <TR><TD ALIGN="LEFT" BGCOLOR="#fffbeb"><FONT FACE="Helvetica" POINT-SIZE="8" COLOR="#92400e"><I>M:N junction -- composite PK, both CASCADE</I></FONT></TD></TR>
+      </TABLE>>]
+
+    quizzes [label=<
+      <TABLE BORDER="0" CELLBORDER="1" CELLSPACING="0" CELLPADDING="4">
+      <TR><TD BGCOLOR="#2d3748" ALIGN="CENTER"><FONT COLOR="white" FACE="Helvetica" POINT-SIZE="11"><B>quizzes</B></FONT></TD></TR>
+      <TR><TD ALIGN="LEFT" BGCOLOR="#ebf8ff"><FONT FACE="Helvetica" POINT-SIZE="9"><B>[PK]</B> <B>id</B>  <FONT COLOR="#718096">uuid</FONT></FONT></TD></TR>
+      <TR><TD ALIGN="LEFT" BGCOLOR="#fef9c3"><FONT FACE="Helvetica" POINT-SIZE="9"><B>[FK]</B> <B>resource_id</B>  <FONT COLOR="#718096">uuid CASCADE</FONT></FONT></TD></TR>
+      <TR><TD ALIGN="LEFT" BGCOLOR="#edf2f7"><FONT FACE="Helvetica" POINT-SIZE="9"><B>title</B>  <FONT COLOR="#718096">varchar(160)</FONT></FONT></TD></TR>
+      <TR><TD ALIGN="LEFT" BGCOLOR="#f7fafc"><FONT FACE="Helvetica" POINT-SIZE="9"><B>passing_score</B>  <FONT COLOR="#718096">integer</FONT></FONT></TD></TR>
+      <TR><TD ALIGN="LEFT" BGCOLOR="#edf2f7"><FONT FACE="Helvetica" POINT-SIZE="9"><B>questions</B>  <FONT COLOR="#718096">jsonb</FONT></FONT></TD></TR>
+      <TR><TD ALIGN="LEFT" BGCOLOR="#f7fafc"><FONT FACE="Helvetica" POINT-SIZE="9"><B>created_at / updated_at</B>  <FONT COLOR="#718096">timestamptz</FONT></FONT></TD></TR>
+      </TABLE>>]
+  }
+
+  subgraph cluster_lrn {
+    label="Learning" style=dashed color="#3182ce" fontsize=10 fontname=Helvetica bgcolor=white
+
+    quiz_attempts [label=<
+      <TABLE BORDER="0" CELLBORDER="1" CELLSPACING="0" CELLPADDING="4">
+      <TR><TD BGCOLOR="#2d3748" ALIGN="CENTER"><FONT COLOR="white" FACE="Helvetica" POINT-SIZE="11"><B>quiz_attempts</B></FONT></TD></TR>
+      <TR><TD ALIGN="LEFT" BGCOLOR="#ebf8ff"><FONT FACE="Helvetica" POINT-SIZE="9"><B>[PK]</B> <B>id</B>  <FONT COLOR="#718096">uuid</FONT></FONT></TD></TR>
+      <TR><TD ALIGN="LEFT" BGCOLOR="#fef9c3"><FONT FACE="Helvetica" POINT-SIZE="9"><B>[FK]</B> <B>pet_owner_id</B>  <FONT COLOR="#718096">uuid CASCADE</FONT></FONT></TD></TR>
+      <TR><TD ALIGN="LEFT" BGCOLOR="#fef9c3"><FONT FACE="Helvetica" POINT-SIZE="9"><B>[FK]</B> <B>quiz_id</B>  <FONT COLOR="#718096">uuid CASCADE</FONT></FONT></TD></TR>
+      <TR><TD ALIGN="LEFT" BGCOLOR="#edf2f7"><FONT FACE="Helvetica" POINT-SIZE="9"><B>score_pct</B>  <FONT COLOR="#718096">integer CHECK(0..100)</FONT></FONT></TD></TR>
+      <TR><TD ALIGN="LEFT" BGCOLOR="#f7fafc"><FONT FACE="Helvetica" POINT-SIZE="9"><B>passed</B>  <FONT COLOR="#718096">boolean</FONT></FONT></TD></TR>
+      <TR><TD ALIGN="LEFT" BGCOLOR="#edf2f7"><FONT FACE="Helvetica" POINT-SIZE="9"><B>answers</B>  <FONT COLOR="#718096">jsonb</FONT></FONT></TD></TR>
+      <TR><TD ALIGN="LEFT" BGCOLOR="#f7fafc"><FONT FACE="Helvetica" POINT-SIZE="9"><B>completed_at / created_at / updated_at</B>  <FONT COLOR="#718096">timestamptz</FONT></FONT></TD></TR>
+      </TABLE>>]
+  }
+
+  subgraph cluster_com {
+    label="Communication" style=dashed color="#d69e2e" fontsize=10 fontname=Helvetica bgcolor=white
+
+    inquiries [label=<
+      <TABLE BORDER="0" CELLBORDER="1" CELLSPACING="0" CELLPADDING="4">
+      <TR><TD BGCOLOR="#2d3748" ALIGN="CENTER"><FONT COLOR="white" FACE="Helvetica" POINT-SIZE="11"><B>inquiries</B></FONT></TD></TR>
+      <TR><TD ALIGN="LEFT" BGCOLOR="#ebf8ff"><FONT FACE="Helvetica" POINT-SIZE="9"><B>[PK]</B> <B>id</B>  <FONT COLOR="#718096">uuid</FONT></FONT></TD></TR>
+      <TR><TD ALIGN="LEFT" BGCOLOR="#fef9c3"><FONT FACE="Helvetica" POINT-SIZE="9"><B>[FK]</B> <B>pet_owner_id</B>  <FONT COLOR="#718096">uuid CASCADE</FONT></FONT></TD></TR>
+      <TR><TD ALIGN="LEFT" BGCOLOR="#fef9c3"><FONT FACE="Helvetica" POINT-SIZE="9"><B>[FK]</B> <B>assigned_vet_id</B>  <FONT COLOR="#718096">uuid SET NULL NULL</FONT></FONT></TD></TR>
+      <TR><TD ALIGN="LEFT" BGCOLOR="#edf2f7"><FONT FACE="Helvetica" POINT-SIZE="9"><B>subject</B>  <FONT COLOR="#718096">varchar(160)</FONT></FONT></TD></TR>
+      <TR><TD ALIGN="LEFT" BGCOLOR="#f7fafc"><FONT FACE="Helvetica" POINT-SIZE="9"><B>question / response</B>  <FONT COLOR="#718096">text</FONT></FONT></TD></TR>
+      <TR><TD ALIGN="LEFT" BGCOLOR="#edf2f7"><FONT FACE="Helvetica" POINT-SIZE="9"><B>image_urls</B>  <FONT COLOR="#718096">jsonb</FONT></FONT></TD></TR>
+      <TR><TD ALIGN="LEFT" BGCOLOR="#f7fafc"><FONT FACE="Helvetica" POINT-SIZE="9"><B>status</B>  <FONT COLOR="#718096">varchar(9) CHECK(pending|responded|closed)</FONT></FONT></TD></TR>
+      <TR><TD ALIGN="LEFT" BGCOLOR="#edf2f7"><FONT FACE="Helvetica" POINT-SIZE="9"><B>created_at / updated_at</B>  <FONT COLOR="#718096">timestamptz</FONT></FONT></TD></TR>
+      </TABLE>>]
+
+    chats [label=<
+      <TABLE BORDER="0" CELLBORDER="1" CELLSPACING="0" CELLPADDING="4">
+      <TR><TD BGCOLOR="#2d3748" ALIGN="CENTER"><FONT COLOR="white" FACE="Helvetica" POINT-SIZE="11"><B>chats</B></FONT></TD></TR>
+      <TR><TD ALIGN="LEFT" BGCOLOR="#ebf8ff"><FONT FACE="Helvetica" POINT-SIZE="9"><B>[PK]</B> <B>id</B>  <FONT COLOR="#718096">uuid</FONT></FONT></TD></TR>
+      <TR><TD ALIGN="LEFT" BGCOLOR="#fef9c3"><FONT FACE="Helvetica" POINT-SIZE="9"><B>[FK]</B> <B>pet_owner_id</B>  <FONT COLOR="#718096">uuid CASCADE</FONT></FONT></TD></TR>
+      <TR><TD ALIGN="LEFT" BGCOLOR="#fef9c3"><FONT FACE="Helvetica" POINT-SIZE="9"><B>[FK]</B> <B>vet_id</B>  <FONT COLOR="#718096">uuid SET NULL NULL</FONT></FONT></TD></TR>
+      <TR><TD ALIGN="LEFT" BGCOLOR="#edf2f7"><FONT FACE="Helvetica" POINT-SIZE="9"><B>subject</B>  <FONT COLOR="#718096">varchar(160)</FONT></FONT></TD></TR>
+      <TR><TD ALIGN="LEFT" BGCOLOR="#f7fafc"><FONT FACE="Helvetica" POINT-SIZE="9"><B>status</B>  <FONT COLOR="#718096">varchar(9) CHECK(initiated|active|closed)</FONT></FONT></TD></TR>
+      <TR><TD ALIGN="LEFT" BGCOLOR="#edf2f7"><FONT FACE="Helvetica" POINT-SIZE="9"><B>started_at / ended_at</B>  <FONT COLOR="#718096">timestamptz</FONT></FONT></TD></TR>
+      <TR><TD ALIGN="LEFT" BGCOLOR="#f7fafc"><FONT FACE="Helvetica" POINT-SIZE="9"><B>owner_last_read_at / vet_last_read_at</B>  <FONT COLOR="#718096">timestamptz NULL</FONT></FONT></TD></TR>
+      <TR><TD ALIGN="LEFT" BGCOLOR="#edf2f7"><FONT FACE="Helvetica" POINT-SIZE="9"><B>created_at / updated_at</B>  <FONT COLOR="#718096">timestamptz</FONT></FONT></TD></TR>
+      </TABLE>>]
+
+    chat_messages [label=<
+      <TABLE BORDER="0" CELLBORDER="1" CELLSPACING="0" CELLPADDING="4">
+      <TR><TD BGCOLOR="#2d3748" ALIGN="CENTER"><FONT COLOR="white" FACE="Helvetica" POINT-SIZE="11"><B>chat_messages</B></FONT></TD></TR>
+      <TR><TD ALIGN="LEFT" BGCOLOR="#ebf8ff"><FONT FACE="Helvetica" POINT-SIZE="9"><B>[PK]</B> <B>id</B>  <FONT COLOR="#718096">uuid</FONT></FONT></TD></TR>
+      <TR><TD ALIGN="LEFT" BGCOLOR="#fef9c3"><FONT FACE="Helvetica" POINT-SIZE="9"><B>[FK]</B> <B>chat_id</B>  <FONT COLOR="#718096">uuid CASCADE</FONT></FONT></TD></TR>
+      <TR><TD ALIGN="LEFT" BGCOLOR="#fef9c3"><FONT FACE="Helvetica" POINT-SIZE="9"><B>[FK]</B> <B>sender_id</B>  <FONT COLOR="#718096">uuid CASCADE</FONT></FONT></TD></TR>
+      <TR><TD ALIGN="LEFT" BGCOLOR="#edf2f7"><FONT FACE="Helvetica" POINT-SIZE="9"><B>body</B>  <FONT COLOR="#718096">text</FONT></FONT></TD></TR>
+      <TR><TD ALIGN="LEFT" BGCOLOR="#f7fafc"><FONT FACE="Helvetica" POINT-SIZE="9"><B>image_url</B>  <FONT COLOR="#718096">text NULL</FONT></FONT></TD></TR>
+      <TR><TD ALIGN="LEFT" BGCOLOR="#edf2f7"><FONT FACE="Helvetica" POINT-SIZE="9"><B>sent_at / created_at / updated_at</B>  <FONT COLOR="#718096">timestamptz</FONT></FONT></TD></TR>
+      </TABLE>>]
+  }
+
+  subgraph cluster_don {
+    label="Donations" style=dashed color="#e53e3e" fontsize=10 fontname=Helvetica bgcolor=white
+
+    donations [label=<
+      <TABLE BORDER="0" CELLBORDER="1" CELLSPACING="0" CELLPADDING="4">
+      <TR><TD BGCOLOR="#2d3748" ALIGN="CENTER"><FONT COLOR="white" FACE="Helvetica" POINT-SIZE="11"><B>donations</B></FONT></TD></TR>
+      <TR><TD ALIGN="LEFT" BGCOLOR="#ebf8ff"><FONT FACE="Helvetica" POINT-SIZE="9"><B>[PK]</B> <B>id</B>  <FONT COLOR="#718096">uuid</FONT></FONT></TD></TR>
+      <TR><TD ALIGN="LEFT" BGCOLOR="#fef9c3"><FONT FACE="Helvetica" POINT-SIZE="9"><B>[FK]</B> <B>pet_owner_id</B>  <FONT COLOR="#718096">uuid CASCADE</FONT></FONT></TD></TR>
+      <TR><TD ALIGN="LEFT" BGCOLOR="#edf2f7"><FONT FACE="Helvetica" POINT-SIZE="9"><B>amount_cents</B>  <FONT COLOR="#718096">integer CHECK(&gt;0)</FONT></FONT></TD></TR>
+      <TR><TD ALIGN="LEFT" BGCOLOR="#f7fafc"><FONT FACE="Helvetica" POINT-SIZE="9"><B>currency</B>  <FONT COLOR="#718096">varchar(3)</FONT></FONT></TD></TR>
+      <TR><TD ALIGN="LEFT" BGCOLOR="#edf2f7"><FONT FACE="Helvetica" POINT-SIZE="9"><B>status</B>  <FONT COLOR="#718096">varchar(9) CHECK(pending|succeeded|failed)</FONT></FONT></TD></TR>
+      <TR><TD ALIGN="LEFT" BGCOLOR="#f7fafc"><FONT FACE="Helvetica" POINT-SIZE="9"><B>recurring</B>  <FONT COLOR="#718096">boolean</FONT></FONT></TD></TR>
+      <TR><TD ALIGN="LEFT" BGCOLOR="#edf2f7"><FONT FACE="Helvetica" POINT-SIZE="9"><B>created_at / updated_at</B>  <FONT COLOR="#718096">timestamptz</FONT></FONT></TD></TR>
+      </TABLE>>]
+
+    donation_records [label=<
+      <TABLE BORDER="0" CELLBORDER="1" CELLSPACING="0" CELLPADDING="4">
+      <TR><TD BGCOLOR="#2d3748" ALIGN="CENTER"><FONT COLOR="white" FACE="Helvetica" POINT-SIZE="11"><B>donation_records</B></FONT></TD></TR>
+      <TR><TD ALIGN="LEFT" BGCOLOR="#ebf8ff"><FONT FACE="Helvetica" POINT-SIZE="9"><B>[PK]</B> <B>id</B>  <FONT COLOR="#718096">uuid</FONT></FONT></TD></TR>
+      <TR><TD ALIGN="LEFT" BGCOLOR="#fef9c3"><FONT FACE="Helvetica" POINT-SIZE="9"><B>[FK]</B> <B>donation_id</B>  <FONT COLOR="#718096">uuid UNIQUE CASCADE</FONT></FONT></TD></TR>
+      <TR><TD ALIGN="LEFT" BGCOLOR="#edf2f7"><FONT FACE="Helvetica" POINT-SIZE="9"><B>transaction_ref</B>  <FONT COLOR="#718096">varchar(120) UNIQUE</FONT></FONT></TD></TR>
+      <TR><TD ALIGN="LEFT" BGCOLOR="#f7fafc"><FONT FACE="Helvetica" POINT-SIZE="9"><B>provider</B>  <FONT COLOR="#718096">varchar(40)</FONT></FONT></TD></TR>
+      <TR><TD ALIGN="LEFT" BGCOLOR="#edf2f7"><FONT FACE="Helvetica" POINT-SIZE="9"><B>amount_cents / currency</B>  <FONT COLOR="#718096">integer / varchar(3)</FONT></FONT></TD></TR>
+      <TR><TD ALIGN="LEFT" BGCOLOR="#f7fafc"><FONT FACE="Helvetica" POINT-SIZE="9"><B>final_status</B>  <FONT COLOR="#718096">varchar(20)</FONT></FONT></TD></TR>
+      <TR><TD ALIGN="LEFT" BGCOLOR="#edf2f7"><FONT FACE="Helvetica" POINT-SIZE="9"><B>processed_at / created_at / updated_at</B>  <FONT COLOR="#718096">timestamptz</FONT></FONT></TD></TR>
+      <TR><TD ALIGN="LEFT" BGCOLOR="#fffbeb"><FONT FACE="Helvetica" POINT-SIZE="8" COLOR="#92400e"><I>1:1 composition &lt;- donations (CASCADE)</I></FONT></TD></TR>
+      </TABLE>>]
+  }
+
+  subgraph cluster_fb {
+    label="Feedback" style=dashed color="#319795" fontsize=10 fontname=Helvetica bgcolor=white
+
+    feedback [label=<
+      <TABLE BORDER="0" CELLBORDER="1" CELLSPACING="0" CELLPADDING="4">
+      <TR><TD BGCOLOR="#2d3748" ALIGN="CENTER"><FONT COLOR="white" FACE="Helvetica" POINT-SIZE="11"><B>feedback</B></FONT></TD></TR>
+      <TR><TD ALIGN="LEFT" BGCOLOR="#ebf8ff"><FONT FACE="Helvetica" POINT-SIZE="9"><B>[PK]</B> <B>id</B>  <FONT COLOR="#718096">uuid</FONT></FONT></TD></TR>
+      <TR><TD ALIGN="LEFT" BGCOLOR="#fef9c3"><FONT FACE="Helvetica" POINT-SIZE="9"><B>[FK]</B> <B>submitter_id</B>  <FONT COLOR="#718096">uuid CASCADE</FONT></FONT></TD></TR>
+      <TR><TD ALIGN="LEFT" BGCOLOR="#fef9c3"><FONT FACE="Helvetica" POINT-SIZE="9"><B>[FK]</B> <B>resource_id</B>  <FONT COLOR="#718096">uuid 0..1 CASCADE NULL</FONT></FONT></TD></TR>
+      <TR><TD ALIGN="LEFT" BGCOLOR="#edf2f7"><FONT FACE="Helvetica" POINT-SIZE="9"><B>flagged</B>  <FONT COLOR="#718096">boolean</FONT></FONT></TD></TR>
+      <TR><TD ALIGN="LEFT" BGCOLOR="#f7fafc"><FONT FACE="Helvetica" POINT-SIZE="9"><B>created_at / updated_at</B>  <FONT COLOR="#718096">timestamptz</FONT></FONT></TD></TR>
+      <TR><TD ALIGN="LEFT" BGCOLOR="#fffbeb"><FONT FACE="Helvetica" POINT-SIZE="8" COLOR="#92400e"><I>resource_id -&gt; resources (0..1, CASCADE) [NEW design]</I></FONT></TD></TR>
+      </TABLE>>]
+
+    feedback_entries [label=<
+      <TABLE BORDER="0" CELLBORDER="1" CELLSPACING="0" CELLPADDING="4">
+      <TR><TD BGCOLOR="#2d3748" ALIGN="CENTER"><FONT COLOR="white" FACE="Helvetica" POINT-SIZE="11"><B>feedback_entries</B></FONT></TD></TR>
+      <TR><TD ALIGN="LEFT" BGCOLOR="#ebf8ff"><FONT FACE="Helvetica" POINT-SIZE="9"><B>[PK]</B> <B>id</B>  <FONT COLOR="#718096">uuid</FONT></FONT></TD></TR>
+      <TR><TD ALIGN="LEFT" BGCOLOR="#fef9c3"><FONT FACE="Helvetica" POINT-SIZE="9"><B>[FK]</B> <B>feedback_id</B>  <FONT COLOR="#718096">uuid UNIQUE CASCADE</FONT></FONT></TD></TR>
+      <TR><TD ALIGN="LEFT" BGCOLOR="#edf2f7"><FONT FACE="Helvetica" POINT-SIZE="9"><B>rating</B>  <FONT COLOR="#718096">integer CHECK(1..5)</FONT></FONT></TD></TR>
+      <TR><TD ALIGN="LEFT" BGCOLOR="#f7fafc"><FONT FACE="Helvetica" POINT-SIZE="9"><B>comment</B>  <FONT COLOR="#718096">text</FONT></FONT></TD></TR>
+      <TR><TD ALIGN="LEFT" BGCOLOR="#edf2f7"><FONT FACE="Helvetica" POINT-SIZE="9"><B>created_at / updated_at</B>  <FONT COLOR="#718096">timestamptz</FONT></FONT></TD></TR>
+      <TR><TD ALIGN="LEFT" BGCOLOR="#fffbeb"><FONT FACE="Helvetica" POINT-SIZE="8" COLOR="#92400e"><I>1:1 composition &lt;- feedback (CASCADE)</I></FONT></TD></TR>
+      </TABLE>>]
+  }
+
+  // ── Relationship colour legend ─────────────────────────────────────────
+  legend [shape=none margin=0 label=<
+    <TABLE BORDER="1" CELLBORDER="0" CELLSPACING="3" CELLPADDING="4" BGCOLOR="white">
+    <TR><TD COLSPAN="2" ALIGN="LEFT"><FONT FACE="Helvetica" POINT-SIZE="10"><B>Foreign keys &mdash; ON DELETE</B></FONT></TD></TR>
+    <TR><TD BGCOLOR="#2b6cb0">    </TD><TD ALIGN="LEFT"><FONT FACE="Helvetica" POINT-SIZE="9">CASCADE  (owned data / 1:1 composition)</FONT></TD></TR>
+    <TR><TD BGCOLOR="#dd6b20">    </TD><TD ALIGN="LEFT"><FONT FACE="Helvetica" POINT-SIZE="9">SET NULL  (optional vet assignment)</FONT></TD></TR>
+    <TR><TD BGCOLOR="#c53030">    </TD><TD ALIGN="LEFT"><FONT FACE="Helvetica" POINT-SIZE="9">RESTRICT  (reference data / author)</FONT></TD></TR>
+    </TABLE>>]
+
+  // ── Edges (colour = ON DELETE action; the FK column is shown in-table) ──
+  edge [color="#2b6cb0" style=solid]   // CASCADE
+  user_credentials        -> accounts
+  pets                    -> accounts
+  first_aid_resource_link -> first_aid_guidance
+  first_aid_resource_link -> resources
+  quizzes                 -> resources
+  quiz_attempts           -> accounts
+  quiz_attempts           -> quizzes
+  inquiries               -> accounts
+  chats                   -> accounts
+  chat_messages           -> chats
+  chat_messages           -> accounts
+  donations               -> accounts
+  donation_records        -> donations
+  feedback                -> accounts
+  feedback                -> resources
+  feedback_entries        -> feedback
+
+  edge [color="#dd6b20" style=dashed]   // SET NULL
+  inquiries -> accounts
+  chats     -> accounts
+
+  edge [color="#c53030" style=dashed]   // RESTRICT
+  pets               -> pet_types
+  first_aid_guidance -> pet_types
+  first_aid_guidance -> accounts
+  resources          -> pet_types
+  resources          -> accounts
+}
