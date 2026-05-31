@@ -151,8 +151,7 @@ classDiagram
   %% ===== Entity links =====
   FirstAidGuidance "0..*" --> "0..*" Resource : supported by
   Quiz "0..*" --> "1" Resource : linked to
-  Feedback "0..1" ..> Resource : targets
-  Feedback "0..1" ..> FirstAidGuidance : targets
+  Feedback --> "0..1" Resource : targets
   Feedback "1" *-- "1" FeedbackEntry : holds
 
   %% ===== Chat =====

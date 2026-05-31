@@ -242,8 +242,7 @@ Resource "0..*" --> "1" PetType : grouped by
 ' --- Entity associations ----------------------------------------------------
 FirstAidGuidance "0..*" --> "0..*" Resource : supported by (changed: M2M)
 Quiz "0..*" --> "1" Resource : linked to
-Feedback "0..1" ..> Resource : targets (xor)
-Feedback "0..1" ..> FirstAidGuidance : targets (new, xor)
+Feedback --> "0..1" Resource : targets
 Feedback "1" *-- "1" FeedbackEntry : holds
 
 ' --- Chat / messages --------------------------------------------------------
@@ -296,9 +295,9 @@ note bottom of PaymentProcessor
 end note
 
 note bottom of Feedback
-  Polymorphic target (target_type +
-  target_id): a Feedback targets a
-  Resource OR a FirstAidGuidance (xor).
+  Targets a single Resource (UML 0..1)
+  via a real FK (resource_id), so the
+  rated content always exists.
 end note
 
 legend right
@@ -310,9 +309,9 @@ legend right
   Added since A2: ChatMessage, EventBus (Observer),
   ConnectionManager (WebSocket), Permission (RBAC),
   PaymentProcessor hierarchy (Adapter).
-  Changed since A2: Feedback polymorphic target,
-  FirstAidGuidance to Resource is many-to-many,
-  Dashboard instantiated per request.
+  Changed since A2: FirstAidGuidance to Resource is
+  many-to-many; Dashboard instantiated per request.
+  (Feedback -> Resource is unchanged from A2.)
 endlegend
 
 @enduml
