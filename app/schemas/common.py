@@ -298,7 +298,10 @@ class DonationOut(BaseModel):
 
 
 class FeedbackIn(BaseModel):
-    target_type: str = Field(pattern=r"^(resource|guidance)$")
+    # Feedback targets a Resource only (UML class diagram: Feedback -> Resource 0..1).
+    # The class-diagram alignment in app/models/feedback.py drops guidance as a
+    # target, so the API rejects "guidance" here to match the data model.
+    target_type: str = Field(pattern=r"^resource$")
     target_id: uuid.UUID
     rating: int = Field(ge=1, le=5)
     comment: str = Field(default="", max_length=1000)

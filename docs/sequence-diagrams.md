@@ -335,3 +335,64 @@ VD --> Vet : showChatClosed()
 The original 7.6 diagram routes a new chat to one chosen veterinary expert at creation. The as built code uses a pool model. When the owner picks a specific expert the chat goes directly to that person, otherwise it enters a shared pool and the alert reaches every active expert through the ConnectionManager. The first expert to join claims the chat, flips the status to ACTIVE, and from that point messages flow in both directions through the WebSocket Observer layer. Either actor may close the chat, which flips the status to CLOSED and broadcasts to both sides. The diagram shows an archiveMessageHistory self call but the code keeps history in place by leaving the chat_messages rows after closure, which retains the conversation for future reference without a separate archive store.
 
 ---
+
+## 7.7 Pet Owner Submits Feedback on Published Content
+
+```plantuml
+@startuml SequenceDiagram-7.7-Revised
+title 7.7 Pet Owner Submits Feedback on Published Content (as built)
+
+actor "Pet Owner" as Owner
+participant ":PetOwnerDashboard" as PD
+participant ":Feedback" as F
+participant ":FeedbackEntry" as FE
+participant ":ConnectionManager" as CM
+participant ":VetDashboard" as VD
+actor "Veterinary Expert" as Vet
+
+== Submission Phase ==
+Owner -> PD : openFeedbackForm(resourceId)
+PD --> Owner : displayFeedbackForm()
+Owner -> PD : submitFeedback(rating, comment, flagInaccurate)
+PD -> F : create(submitterId, resourceId, flagged)
+F -> FE : create(rating, comment)
+note over F
+  The whole submission happens in one
+  atomic call. Feedback targets a single
+  Resource through a real foreign key,
+  matching the class diagram.
+end note
+FE --> F : entry
+F --> PD : feedback
+PD --> Owner : showSubmissionConfirmed()
+
+== Flag Routing Phase ==
+alt Feedback flagged as inaccurate
+  PD -> CM : broadcast(feedback_flagged)
+  note right of CM
+    Mirrors the chat pool alert. The push
+    reaches every active veterinary expert
+    in real time through the ConnectionManager.
+  end note
+  CM --> VD : feedback_flagged
+  VD --> Vet : showFlaggedFeedbackAlert()
+end
+
+== Veterinary Expert Review Phase ==
+Vet -> VD : openFeedbackPanel()
+note right of VD
+  Flagged feedback rows arrive preloaded
+  with the rating, comment, and the linked
+  resource title resolved from the snapshot.
+  A view resource link jumps the vet to
+  the resources tab for full context.
+end note
+VD --> Vet : displayFlaggedContentForReview()
+@enduml
+```
+
+### Why the change
+
+The original 7.7 diagram has an alt branch where feedback targets either a FirstAidguidance or a Resource. That conflicts with the class diagram, which shows Feedback targeting a Resource only. The as built code follows the class diagram, so feedback uses a single resource_id foreign key and the alt branch is gone. The submission also happens in one atomic call rather than separate create and assignTarget steps, which keeps the data consistent. The flag routing path is now wired end to end. The router publishes the event on the EventBus and also broadcasts a real time alert through the ConnectionManager to every active veterinary expert, mirroring the chat pool model. The vet panel shows the flagged feedback with the linked resource title resolved from the snapshot, plus a small link that opens the resources tab for full context.
+
+---

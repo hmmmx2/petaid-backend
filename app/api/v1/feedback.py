@@ -11,6 +11,7 @@ from app.domain.permissions import Permission
 from app.domain.app_controller import get_app_controller
 from app.domain.events import CH_FEEDBACK_FLAGGED, CH_FEEDBACK_SUBMITTED, DomainEvent
 from app.models.feedback import Feedback, FeedbackEntry
+from app.realtime.connection_manager import manager
 from app.schemas.common import FeedbackIn, FeedbackOut
 
 router = APIRouter(prefix="/feedback", tags=["feedback"])
@@ -65,6 +66,18 @@ async def submit_feedback(
                 channel=CH_FEEDBACK_FLAGGED,
                 payload={"feedback_id": str(feedback.id)},
             )
+        )
+        # Real-time alert to every active veterinary expert. Mirrors the
+        # pool-broadcast pattern that start_chat uses for undirected chats —
+        # the diagram's pushReviewAlert step is now actually delivered.
+        await manager.send_to_role(
+            "veterinary_expert",
+            {
+                "type": "feedback_flagged",
+                "feedback_id": str(feedback.id),
+                "resource_id": str(feedback.resource_id) if feedback.resource_id else None,
+                "rating": entry.rating,
+            },
         )
     return _to_out(feedback)
 
