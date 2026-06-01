@@ -121,3 +121,60 @@ VD --> Vet : showPublicationConfirmed()
 The original 7.3 diagram splits resource creation into many small steps. It expects an empty draft to be created up front, then media uploaded, then pet type linked, then guidance linked, then publication. The as built code uses a single atomic create call followed by a separate publish call. MediaStorage validates the file metadata inline during create, so the resource is either saved fully formed or not at all. The pet type is a required column on the resource and is set during create, not as a later link step. Publication is the only state change after creation, moving the status from DRAFT to PUBLISHED. Runtime linking of a resource to a FirstAidGuidance is not implemented as a separate function in this flow.
 
 ---
+
+## 7.4 Pet Owner Completes a Quiz Linked to a Resource
+
+```plantuml
+@startuml SequenceDiagram-7.4-Revised
+title 7.4 Pet Owner Completes a Quiz Linked to a Resource (as built)
+
+actor "Pet Owner" as Owner
+participant ":PetOwnerDashboard" as PD
+participant ":Quiz" as Q
+participant ":QuizAttempt" as QA
+
+== Topic Selection Phase ==
+Owner -> PD : openQuizzesTab()
+note right of PD
+  The quiz list is preloaded with the
+  dashboard snapshot, so no separate
+  fetch by pet type is needed at runtime.
+end note
+PD --> Owner : displayQuizList()
+
+== Quiz Attempt Phase ==
+Owner -> PD : selectQuiz(quizId)
+PD --> Owner : displayAllQuestions(quiz)
+note right of PD
+  All questions render in one form. The
+  owner fills every answer locally before
+  submitting, which keeps round trips low
+  and the correct answers hidden until
+  the attempt is complete.
+end note
+loop For each question in the form
+  Owner -> PD : pickAnswer(index)
+end
+
+== Result and Persistence Phase ==
+Owner -> PD : submitQuiz(answers)
+PD -> Q : evaluate(answers)
+note over Q
+  The Quiz computes score, pass or fail,
+  and a per question report in one batch.
+  This protects the best score retention
+  rule because correct answers are never
+  revealed during the attempt.
+end note
+Q --> PD : (score, passed, perQuestion)
+PD -> QA : create(petOwnerId, quizId, score, passed, answers, completedAt)
+QA --> PD : attempt
+PD --> Owner : displayResultAndProgress()
+@enduml
+```
+
+### Why the change
+
+The original 7.4 diagram has the owner pick answers one at a time, with the software evaluating each answer during the attempt and revealing the correct one before the quiz ends. The as built code uses batch evaluation. The owner answers every question in a single form, then a single submit call sends all answers, the Quiz computes score and per question feedback in one pass, and the result is persisted as a QuizAttempt. This keeps the highest score retention rule honest, because correct answers are never visible while the attempt is in progress, and it removes the extra round trips between the owner and the software for each question. The list of quizzes also comes preloaded with the dashboard snapshot rather than a runtime pet type lookup.
+
+---
