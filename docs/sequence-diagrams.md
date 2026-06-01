@@ -396,3 +396,93 @@ VD --> Vet : displayFlaggedContentForReview()
 The original 7.7 diagram has an alt branch where feedback targets either a FirstAidguidance or a Resource. That conflicts with the class diagram, which shows Feedback targeting a Resource only. The as built code follows the class diagram, so feedback uses a single resource_id foreign key and the alt branch is gone. The submission also happens in one atomic call rather than separate create and assignTarget steps, which keeps the data consistent. The flag routing path is now wired end to end. The router publishes the event on the EventBus and also broadcasts a real time alert through the ConnectionManager to every active veterinary expert, mirroring the chat pool model. The vet panel shows the flagged feedback with the linked resource title resolved from the snapshot, plus a small link that opens the resources tab for full context.
 
 ---
+
+## 7.8 Pet Owner Registers an Account with Email Verification
+
+```plantuml
+@startuml SequenceDiagram-7.8-Revised
+title 7.8 Pet Owner Registers an Account with Email Verification (as built)
+
+actor "Pet Owner" as Owner
+participant ":AppController" as AC
+participant ":AuthManager" as AM
+participant ":PetOwner" as PO
+participant ":UserCredentials" as UC
+participant ":PetOwnerDashboard" as PD
+
+== Registration Submission Phase ==
+Owner -> AC : submitRegistration(email, password, role=pet_owner, fullName)
+note over AC
+  AppController is the backend composition
+  root that owns AuthManager. The Pet Owner
+  reaches it through the Welcome screen and
+  the REST API rather than calling methods
+  on AppController directly.
+end note
+AC -> AM : register(email, password, role, fullName)
+
+alt Input format valid and role is pet_owner
+  == Account Creation Phase ==
+  AM -> PO : _make_account(role, fullName)  [Factory Method]
+  note right of AM
+    Only pet_owner may self register. A vet
+    role is rejected here so a caller cannot
+    obtain a vet token through the email
+    verification path.
+  end note
+  PO --> AM : account
+  AM -> UC : create(account_id, email, bcrypt(password))
+  UC --> AM : credentials
+  note over UC
+    Composition through a unique foreign key
+    with cascade. The credentials cannot
+    outlive the account.
+  end note
+
+  == Email Verification Phase ==
+  AM -> AM : generateVerificationCode()
+  note right of AM
+    The code is a six digit value with a
+    fifteen minute time to live. It lives in
+    AuthManager memory rather than on the
+    UserCredentials row, which keeps the
+    sensitive short lived value out of the
+    database.
+  end note
+  AM --> AC : (account, code)
+  AC --> Owner : promptVerificationCode()
+  Owner -> AC : submitVerificationCode(email, code)
+  AC -> AM : verify_email(email, code)
+  AM -> AM : matchCode(email, code)
+  alt Verification code correct
+    AM -> UC : set email_verified to true
+    AM --> AC : tokenPair
+    AC --> Owner : registrationConfirmed()
+
+    == Dashboard Activation Phase ==
+    Owner -> AC : openDashboard(token)
+    AC -> AC : create_dashboard(account)  [Factory Method]
+    AC -> PD : render()  [Template Method]
+    note right of PD
+      Dashboard.render is the Template Method
+      that calls the subclass _panels
+      implementation to assemble the snapshot.
+    end note
+    PD --> AC : snapshot
+    AC --> Owner : displayPetOwnerDashboard()
+  else Verification code incorrect
+    AM --> AC : InvalidInputException(code)
+    AC --> Owner : showVerificationErrorAndRetry()
+  end
+else Input format invalid
+  AM --> AC : InvalidInputException(field)
+  AC --> Owner : showFieldErrorMessage()
+end
+@enduml
+```
+
+### Why the change
+
+The original 7.8 diagram has the user talk directly to AppController and shows UserCredentials generating the verification code. The as built code follows the same shape with two small adaptations. AppController is the backend composition root that owns AuthManager, and the Pet Owner reaches it through the Welcome screen and the REST API rather than by calling AppController methods directly. The verification code lives in AuthManager memory with a fifteen minute time to live rather than on a UserCredentials column, which keeps the sensitive short lived value out of the database. The Factory Method on AuthManager and the Template Method on Dashboard.render are realised exactly as drawn. Only pet_owner may self register, so a vet token cannot be obtained through the verification path.
+
+---
