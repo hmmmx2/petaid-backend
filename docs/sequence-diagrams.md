@@ -70,3 +70,54 @@ PD --> Owner : displayResponse()
 The original 7.2 diagram routes a new inquiry to one chosen veterinary expert at the moment of submission. The as built code uses a pool model instead. Every available expert sees the pending inquiry, and the first one who replies claims it. A claim and lock check then prevents any other expert from overwriting that reply. This closes a real authorisation gap and balances the load across the team without extra routing logic. The AppController publishes inquiry events through the EventBus. Real time push to the Pet Owner is left out on purpose because the SRS treats inquiry as an asynchronous channel.
 
 ---
+
+## 7.3 Veterinary Expert Publishes a New Resource
+
+```plantuml
+@startuml SequenceDiagram-7.3-Revised
+title 7.3 Veterinary Expert Publishes a New Resource (as built)
+
+actor "Veterinary Expert" as Vet
+participant ":VetDashboard" as VD
+participant ":MediaStorage" as MS
+participant ":Resource" as R
+
+== Creation Phase ==
+Vet -> VD : openNewResourceForm()
+VD --> Vet : showResourceForm()
+Vet -> VD : submit(title, contentType, petTypeId, mediaPath, sizeBytes)
+VD -> MS : accept(contentType, mediaPath, sizeBytes)
+note over MS
+  Validate the file format and size against
+  the boundary rules in the SRS. Reject early
+  if it fails so no row hits the database.
+end note
+MS --> VD : descriptor
+VD -> R : create(title, contentType, petTypeId, author=vet, mediaPath, status=DRAFT)
+R --> VD : resource
+VD --> Vet : showDraftSaved()
+note right of VD
+  The whole creation happens in one
+  transactional call. Either the resource
+  exists fully formed or it never exists.
+end note
+
+== Publication Phase ==
+Vet -> VD : reviewDraft(resourceId)
+note right of VD
+  Draft details are already in the resource
+  list, so no extra fetch is needed.
+end note
+VD --> Vet : displayDraft()
+Vet -> VD : publish(resourceId)
+VD -> R : status = PUBLISHED
+R --> VD : updated resource
+VD --> Vet : showPublicationConfirmed()
+@enduml
+```
+
+### Why the change
+
+The original 7.3 diagram splits resource creation into many small steps. It expects an empty draft to be created up front, then media uploaded, then pet type linked, then guidance linked, then publication. The as built code uses a single atomic create call followed by a separate publish call. MediaStorage validates the file metadata inline during create, so the resource is either saved fully formed or not at all. The pet type is a required column on the resource and is set during create, not as a later link step. Publication is the only state change after creation, moving the status from DRAFT to PUBLISHED. Runtime linking of a resource to a FirstAidGuidance is not implemented as a separate function in this flow.
+
+---
