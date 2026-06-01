@@ -75,15 +75,16 @@ CREATE INDEX ix_chats_status ON chats (status);
 CREATE INDEX ix_chats_vet_id ON chats (vet_id);
 
 CREATE TABLE donations (
-	pet_owner_id UUID NOT NULL, 
-	amount_cents INTEGER NOT NULL, 
-	currency VARCHAR(3) NOT NULL, 
-	status VARCHAR(9) NOT NULL, 
-	recurring BOOLEAN NOT NULL, 
-	id UUID NOT NULL DEFAULT gen_random_uuid(), 
-	created_at TIMESTAMP WITH TIME ZONE DEFAULT now() NOT NULL, 
-	updated_at TIMESTAMP WITH TIME ZONE DEFAULT now() NOT NULL, 
-	PRIMARY KEY (id), 
+	pet_owner_id UUID NOT NULL,
+	amount_cents INTEGER NOT NULL,
+	currency VARCHAR(3) NOT NULL,
+	status VARCHAR(9) NOT NULL,
+	recurring BOOLEAN NOT NULL,
+	payment_method VARCHAR(40),
+	id UUID NOT NULL DEFAULT gen_random_uuid(),
+	created_at TIMESTAMP WITH TIME ZONE DEFAULT now() NOT NULL,
+	updated_at TIMESTAMP WITH TIME ZONE DEFAULT now() NOT NULL,
+	PRIMARY KEY (id),
 	FOREIGN KEY(pet_owner_id) REFERENCES accounts (id) ON DELETE CASCADE
 );
 CREATE INDEX ix_donations_pet_owner_id ON donations (pet_owner_id);

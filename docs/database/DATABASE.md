@@ -145,6 +145,7 @@ erDiagram
     donations {
         uuid id PK
         uuid pet_owner_id FK
+        varchar payment_method "nullable"
         int amount_cents
         varchar status "pending | succeeded | failed"
     }
@@ -337,6 +338,7 @@ Physically separated so password/MFA columns are isolated; only `AuthManager` re
 | currency | varchar(3) | NN | ISO-4217 (default `MYR`) |
 | status | varchar(9) | NN, indexed, CHECK | `pending` \| `succeeded` \| `failed` |
 | recurring | boolean | NN | Monthly repeat flag |
+| payment_method | varchar(40) | nullable | Demo-mode method label (`card_on_file` \| `ewallet` \| `online_banking`); informational only, no PCI handling |
 
 ### 3.14 `donation_records` — immutable transaction outcome (composition, 1:1; SRS 3.3.21)
 

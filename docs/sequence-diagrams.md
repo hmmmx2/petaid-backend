@@ -178,3 +178,71 @@ PD --> Owner : displayResultAndProgress()
 The original 7.4 diagram has the owner pick answers one at a time, with the software evaluating each answer during the attempt and revealing the correct one before the quiz ends. The as built code uses batch evaluation. The owner answers every question in a single form, then a single submit call sends all answers, the Quiz computes score and per question feedback in one pass, and the result is persisted as a QuizAttempt. This keeps the highest score retention rule honest, because correct answers are never visible while the attempt is in progress, and it removes the extra round trips between the owner and the software for each question. The list of quizzes also comes preloaded with the dashboard snapshot rather than a runtime pet type lookup.
 
 ---
+
+## 7.5 Pet Owner Makes a Donation
+
+```plantuml
+@startuml SequenceDiagram-7.5-Revised
+title 7.5 Pet Owner Makes a Donation (as built)
+
+actor "Pet Owner" as Owner
+participant ":PetOwnerDashboard" as PD
+participant ":Donation" as D
+participant ":PaymentProcessor" as PP
+participant ":DonationRecord" as DR
+participant ":VetDashboard" as VD
+actor "Veterinary Expert" as Vet
+
+== Donation Initiation Phase ==
+Owner -> PD : openDonationFunction()
+PD --> Owner : displayDonationForm()
+Owner -> PD : submitDonation(amount, paymentMethod)
+PD -> D : create(amount, paymentMethod, status=PENDING)
+
+== Payment Processing Phase ==
+D -> PP : charge(amount, currency)
+note over PP
+  Adapter pattern. MockPaymentProcessor in
+  demo mode, FailingPaymentProcessor used
+  in tests to exercise the failure path.
+end note
+alt Successful payment
+  PP --> D : transactionRef
+  D -> DR : create(transactionRef, amount, processed_at, final_status)
+  DR --> D : record
+  D -> D : mark_succeeded(record)
+  note right of D
+    The mark_succeeded method on Donation
+    enforces the invariant that SUCCEEDED
+    implies a record exists. The DonationRecord
+    is then locked at the data layer by a
+    before_update listener so it cannot be
+    changed after creation.
+  end note
+  D --> PD : donation, record
+  PD --> Owner : showDonationReceipt()
+else Payment failure
+  PP --> D : PaymentFailedException
+  D -> D : mark_failed()
+  D --> PD : error
+  PD --> Owner : showFailureMessageWithRetry()
+end
+
+== Donation Review Phase ==
+Vet -> VD : openDonationReview()
+VD -> D : listSucceededDonations()
+note right of VD
+  Donations come back with their records
+  embedded through eager loading, so no
+  separate read call is needed.
+end note
+D --> VD : donations
+VD --> Vet : displayDonationDetails()
+@enduml
+```
+
+### Why the change
+
+The original 7.5 diagram and the as built code line up closely already. Both use the Adapter pattern through PaymentProcessor, both create the immutable DonationRecord through composition only on success, and both handle the failure path with a clear status. The small adjustments needed to follow the diagram fully were made in code rather than in the drawing. Donation now exposes mark_succeeded and mark_failed methods so the status transition lives on the entity instead of in the router, the payment method label is now carried through from the form to the donation row, and DonationRecord is protected by a before_update listener that refuses any change after insert. With those in place the diagram and the software describe the same flow.
+
+---

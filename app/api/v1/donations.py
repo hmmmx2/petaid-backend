@@ -38,6 +38,7 @@ async def create_donation(
         amount_cents=payload.amount_cents,
         currency=payload.currency,
         recurring=payload.recurring,
+        payment_method=payload.payment_method,
         status=DonationStatus.PENDING,
     )
     db.add(donation)
@@ -50,7 +51,7 @@ async def create_donation(
             donor_label=owner.full_name,
         )
     except PaymentFailedException:
-        donation.status = DonationStatus.FAILED
+        donation.mark_failed()
         await db.commit()
         raise
 
@@ -63,8 +64,8 @@ async def create_donation(
         final_status=result.final_status,
         processed_at=result.processed_at,
     )
-    donation.status = DonationStatus.SUCCEEDED
     db.add(record)
+    donation.mark_succeeded(record)
     await db.commit()
     await db.refresh(donation)
     await db.refresh(record)
@@ -86,6 +87,7 @@ async def create_donation(
         currency=donation.currency,
         recurring=donation.recurring,
         status=donation.status.value,
+        payment_method=donation.payment_method,
         transaction_ref=record.transaction_ref,
         processed_at=record.processed_at,
     )
@@ -114,6 +116,7 @@ async def list_donations(account: CurrentAccountDep, db: DbDep) -> list[Donation
                 currency=d.currency,
                 recurring=d.recurring,
                 status=d.status.value,
+                payment_method=d.payment_method,
                 transaction_ref=d.record.transaction_ref if d.record else None,
                 processed_at=d.record.processed_at if d.record else None,
             )

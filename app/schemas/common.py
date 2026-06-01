@@ -281,6 +281,7 @@ class DonationIn(BaseModel):
     amount_cents: int = Field(ge=100, le=1_000_000_00)
     currency: str = Field(default="MYR", pattern=r"^[A-Z]{3}$")
     recurring: bool = False
+    payment_method: str | None = Field(default=None, max_length=40)
 
 
 class DonationOut(BaseModel):
@@ -291,6 +292,7 @@ class DonationOut(BaseModel):
     currency: str
     recurring: bool
     status: str
+    payment_method: str | None = None
     transaction_ref: str | None
     processed_at: datetime | None
 

@@ -302,7 +302,8 @@ async def seed() -> None:
 
         # --- Donation (composed immutable record) ---------------------- #
         donation = Donation(pet_owner_id=owner.id, amount_cents=2500,
-                            currency="MYR", status=DonationStatus.SUCCEEDED)
+                            currency="MYR", payment_method="card_on_file",
+                            status=DonationStatus.SUCCEEDED)
         db.add(donation)
         await db.flush()
         db.add(DonationRecord(
