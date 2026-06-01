@@ -246,3 +246,92 @@ VD --> Vet : displayDonationDetails()
 The original 7.5 diagram and the as built code line up closely already. Both use the Adapter pattern through PaymentProcessor, both create the immutable DonationRecord through composition only on success, and both handle the failure path with a clear status. The small adjustments needed to follow the diagram fully were made in code rather than in the drawing. Donation now exposes mark_succeeded and mark_failed methods so the status transition lives on the entity instead of in the router, the payment method label is now carried through from the form to the donation row, and DonationRecord is protected by a before_update listener that refuses any change after insert. With those in place the diagram and the software describe the same flow.
 
 ---
+
+## 7.6 Pet Owner and Veterinary Expert Engage in a Chat Session
+
+```plantuml
+@startuml SequenceDiagram-7.6-Revised
+title 7.6 Pet Owner and Veterinary Expert Engage in a Chat Session (as built)
+
+actor "Pet Owner" as Owner
+participant ":PetOwnerDashboard" as PD
+participant ":Chat" as C
+participant ":ConnectionManager" as CM
+participant ":VetDashboard" as VD
+actor "Veterinary Expert" as Vet
+
+== Initiation Phase ==
+Owner -> PD : startChat(subject, vetId optional)
+PD -> C : create(petOwnerId, vetId, subject, status=INITIATED)
+C --> PD : chat
+PD -> CM : broadcast(chat_new)
+note over CM
+  If a specific vet was chosen the alert
+  goes to that vet. Otherwise the chat
+  enters a shared pool and the alert goes
+  to every active veterinary expert.
+end note
+CM --> VD : chat_new
+VD --> Vet : showIncomingChatAlert()
+
+== Active Conversation Phase ==
+Vet -> VD : joinChat(chatId)
+VD -> C : join(vet)
+note over C
+  The join sets vet_id and flips the status
+  to ACTIVE. The first vet to join claims
+  a pool chat, which is the same claim and
+  lock pattern used for inquiries.
+end note
+C --> VD : updated chat
+VD -> CM : broadcast(chat_update, status=ACTIVE)
+CM --> PD : chat_update
+PD --> Owner : displayExpertOnline()
+
+loop Real-time message exchange (either direction)
+  alt Pet Owner sends
+    Owner -> PD : sendMessage(text)
+    PD -> C : appendMessage(petOwner, text)
+    C --> PD : message
+    PD -> CM : broadcast(message)
+    CM --> VD : message
+    VD --> Vet : displayMessage()
+  else Veterinary Expert sends
+    Vet -> VD : sendMessage(text)
+    VD -> C : appendMessage(vet, text)
+    C --> VD : message
+    VD -> CM : broadcast(message)
+    CM --> PD : message
+    PD --> Owner : displayMessage()
+  end
+end
+
+== Closure Phase ==
+alt Either actor closes
+  Owner -> PD : closeChat()
+  PD -> C : close()
+  C --> PD : updated chat
+else
+  Vet -> VD : closeChat()
+  VD -> C : close()
+  C --> VD : updated chat
+end
+note over C
+  Status flips to CLOSED. The message
+  history stays in the chat_messages table
+  for future reference, so no separate
+  archive step is needed.
+end note
+C -> CM : broadcast(chat_update, status=CLOSED)
+CM --> PD : chat_update
+CM --> VD : chat_update
+PD --> Owner : showChatClosed()
+VD --> Vet : showChatClosed()
+@enduml
+```
+
+### Why the change
+
+The original 7.6 diagram routes a new chat to one chosen veterinary expert at creation. The as built code uses a pool model. When the owner picks a specific expert the chat goes directly to that person, otherwise it enters a shared pool and the alert reaches every active expert through the ConnectionManager. The first expert to join claims the chat, flips the status to ACTIVE, and from that point messages flow in both directions through the WebSocket Observer layer. Either actor may close the chat, which flips the status to CLOSED and broadcasts to both sides. The diagram shows an archiveMessageHistory self call but the code keeps history in place by leaving the chat_messages rows after closure, which retains the conversation for future reference without a separate archive store.
+
+---
