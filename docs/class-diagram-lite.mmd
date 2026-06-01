@@ -1,0 +1,152 @@
+%% PetAid class diagram (lite) — classes, stereotypes and relationships only.
+%% No attributes or methods, for a high-level structural overview. The
+%% companion file class-diagram-full.mmd carries the members and methods.
+classDiagram
+  direction TB
+
+  %% ===== Control & Auth =====
+  class AppController {
+    <<singleton>>
+  }
+  class AuthManager
+  class UserCredentials {
+    <<data-holder>>
+  }
+  class Permission {
+    <<policy>>
+  }
+  class EventBus {
+    <<singleton>>
+  }
+  class ConnectionManager {
+    <<singleton>>
+  }
+
+  %% ===== Presentation =====
+  class Dashboard {
+    <<abstract>>
+  }
+  class PetOwnerDashboard
+  class VeterinaryExpertDashboard
+
+  %% ===== Accounts =====
+  class Account {
+    <<abstract>>
+  }
+  class PetOwner {
+    <<actor>>
+  }
+  class VeterinaryExpert {
+    <<actor>>
+  }
+
+  %% ===== Domain entities =====
+  class Pet {
+    <<entity>>
+  }
+  class PetType {
+    <<entity>>
+  }
+  class FirstAidGuidance {
+    <<entity>>
+  }
+  class Quiz {
+    <<entity>>
+  }
+  class Feedback {
+    <<entity>>
+  }
+  class FeedbackEntry {
+    <<data-holder>>
+  }
+  class Inquiry {
+    <<entity>>
+  }
+  class Chat {
+    <<entity>>
+  }
+  class ChatMessage {
+    <<entity>>
+  }
+  class Donation {
+    <<entity>>
+  }
+  class DonationRecord {
+    <<immutable>>
+  }
+  class Resource {
+    <<entity>>
+  }
+
+  %% ===== External collaborators =====
+  class PaymentProcessor {
+    <<abstract>>
+  }
+  class MockPaymentProcessor
+  class FailingPaymentProcessor
+  class MediaStorage {
+    <<data-holder>>
+  }
+
+  %% ===== Inheritance =====
+  Dashboard <|-- PetOwnerDashboard
+  Dashboard <|-- VeterinaryExpertDashboard
+  Account <|-- PetOwner
+  Account <|-- VeterinaryExpert
+  PaymentProcessor <|-- MockPaymentProcessor
+  PaymentProcessor <|-- FailingPaymentProcessor
+
+  %% ===== Control wiring =====
+  AppController ..> PetOwnerDashboard : creates
+  AppController ..> VeterinaryExpertDashboard : creates
+  AppController --> "1" AuthManager : owns
+  AppController --> "1" EventBus : owns
+  AuthManager ..> UserCredentials : reads
+  AuthManager ..> Permission : enforces
+  AuthManager --> "1" Account : current actor
+  Dashboard --> "1" Account : displays for
+  Account "1" *-- "1" UserCredentials : owns
+
+  %% ===== Pet owner =====
+  PetOwner "1" o-- "1..*" Pet : aggregates
+  PetOwner "1" --> "0..*" FirstAidGuidance : takes
+  PetOwner "1" --> "0..*" Quiz : takes
+  PetOwner "1" --> "0..*" Feedback : creates
+  PetOwner "1" --> "0..*" Inquiry : creates
+  PetOwner "1" --> "0..*" Donation : creates
+  PetOwner "1" --> "0..*" Chat : initiates
+
+  %% ===== Vet expert =====
+  VeterinaryExpert "1" --> "0..*" FirstAidGuidance : manages CRUD
+  VeterinaryExpert "1" --> "0..*" Resource : manages CRUD
+  VeterinaryExpert "1" --> "0..*" Inquiry : responds to
+  VeterinaryExpert "1" --> "0..*" Chat : participates in
+
+  %% ===== Classification =====
+  Pet "1..*" --> "1" PetType : classified by
+  FirstAidGuidance "1..*" --> "1" PetType : filtered by
+  Resource "0..*" --> "1" PetType : grouped by
+
+  %% ===== Entity links =====
+  FirstAidGuidance "0..*" --> "0..*" Resource : supported by
+  Quiz "0..*" --> "1" Resource : linked to
+  Feedback "0..1" --> "1" Resource : targets
+  Feedback "1" *-- "1" FeedbackEntry : holds
+
+  %% ===== Chat =====
+  Chat "1" *-- "0..*" ChatMessage : holds
+  ChatMessage "0..*" --> "1" Account : sender
+  Chat ..> ConnectionManager : broadcasts via
+
+  %% ===== Donation =====
+  Donation "1" *-- "1" DonationRecord : records
+  Donation ..> "1" PaymentProcessor : delegates to
+
+  %% ===== Media =====
+  Resource ..> "1" MediaStorage : validates via
+
+  %% ===== Observer (event publication) =====
+  Inquiry ..> EventBus : publishes
+  Chat ..> EventBus : publishes
+  Donation ..> EventBus : publishes
+  Feedback ..> EventBus : publishes
