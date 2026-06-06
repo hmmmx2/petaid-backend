@@ -13,23 +13,14 @@ from app.models.mixins import TimestampMixin, UUIDPkMixin
 
 
 class ResourceStatus(str, enum.Enum):
-    """Lifecycle of a :class:`Resource` (SRS 7.3).
-
-    A new resource starts in :attr:`DRAFT` and only becomes visible to Pet
-    Owners after the Veterinary Expert explicitly approves it.
-    """
+    """Lifecycle of a Resource (SRS 7.3)."""
 
     DRAFT = "draft"
     PUBLISHED = "published"
 
 
 class Resource(UUIDPkMixin, TimestampMixin, Base):
-    """A content item (video, image, document) managed by a Veterinary
-    Expert and grouped by :class:`PetType`.
-
-    File handling is delegated to ``MediaStorage`` — the column on this
-    table is only the relative ``media_path`` returned by the storage layer.
-    """
+    """A content item (video, image, document) managed by a Veterinary Expert."""
 
     __tablename__ = "resources"
 
@@ -48,7 +39,7 @@ class Resource(UUIDPkMixin, TimestampMixin, Base):
 
     title: Mapped[str] = mapped_column(String(160), nullable=False)
     content_type: Mapped[str] = mapped_column(String(20), nullable=False)  # video, pdf, images
-    media_path: Mapped[str | None] = mapped_column(String(500), nullable=True)
+    media_key: Mapped[str | None] = mapped_column(String(500), nullable=True)
     status: Mapped[ResourceStatus] = mapped_column(
         Enum(ResourceStatus, native_enum=False),
         nullable=False,

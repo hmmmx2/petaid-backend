@@ -19,33 +19,41 @@ class Settings(BaseSettings):
     rate_limit_enabled: bool = Field(default=True)
 
     # --- Database / Supabase tuning -------------------------------------- #
-    # Require TLS to the database. Supabase mandates SSL; local docker does not.
     db_ssl: bool = Field(default=False)
-    # Supabase's transaction pooler (pgBouncer) does not support prepared
-    # statements, so asyncpg's statement cache must be disabled. Safe to keep
-    # at 0 everywhere; only matters when going through a pooler.
     db_statement_cache_size: int = Field(default=0)
-    # Connection pool sizing — keep small when behind Supabase's pooler.
     db_pool_size: int = Field(default=5)
     db_max_overflow: int = Field(default=10)
 
+    # --- Cloudflare R2 Object Storage ------------------------------------ #
+    # All fields optional so the app boots without R2 in development.
+    r2_account_id: str | None = Field(default=None)
+    r2_access_key_id: str | None = Field(default=None)
+    r2_secret_access_key: str | None = Field(default=None)
+    r2_bucket_name: str | None = Field(default=None)
+    r2_endpoint_url: str | None = Field(default=None)
+    r2_public_base_url: str | None = Field(default=None)
+
+    @property
+    def r2_enabled(self) -> bool:
+        """True when all required R2 credentials are present."""
+        return bool(
+            self.r2_endpoint_url
+            and self.r2_access_key_id
+            and self.r2_secret_access_key
+            and self.r2_bucket_name
+        )
+
     # --- Object storage (Supabase Storage) ------------------------------ #
-    # When both are set, uploaded image data-URLs are offloaded to a public
-    # Supabase Storage bucket and the DB stores the public URL instead of the
-    # inline base64. Unset → images stay inline (graceful fallback). The
-    # service-role key is server-only and must never reach the frontend.
     supabase_url: str = Field(default="")
     supabase_service_key: str = Field(default="")
     supabase_storage_bucket: str = Field(default="pet-media")
 
-    # Production frontend origin(s) always allowed in addition to CORS_ORIGINS, so
-    # the deployed app keeps working even if the env var is unset/misconfigured.
+    # Production frontend origin(s) always allowed in addition to CORS_ORIGINS.
     _ALWAYS_ALLOWED_ORIGINS = ("https://petaid-frontend.vercel.app",)
 
     @property
     def cors_origins_list(self) -> list[str]:
         configured = [o.strip() for o in self.cors_origins.split(",") if o.strip()]
-        # de-dupe, preserve order, and always include the known prod frontend
         return list(dict.fromkeys([*configured, *self._ALWAYS_ALLOWED_ORIGINS]))
 
     @property
@@ -57,12 +65,7 @@ class Settings(BaseSettings):
 
     @model_validator(mode="after")
     def _harden_production(self) -> "Settings":
-        """Fail fast on insecure production configuration.
-
-        A weak/short JWT secret or a wildcard CORS origin in production is a
-        critical vulnerability (token forgery / CSRF surface), so we refuse to
-        boot rather than start in an unsafe state.
-        """
+        """Fail fast on insecure production configuration."""
         if self.is_production:
             secret = (self.jwt_secret or "").strip()
             if len(secret) < 32 or secret.lower() in self._WEAK_SECRETS:

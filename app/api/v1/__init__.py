@@ -13,6 +13,7 @@ from app.api.v1 import (
     feedback,
     first_aid,
     inquiries,
+    media,
     pet_types,
     pets,
     quizzes,
@@ -25,6 +26,7 @@ api_router.include_router(auth.router)
 api_router.include_router(dashboard.router)
 api_router.include_router(pet_types.router)
 api_router.include_router(pets.router)
+api_router.include_router(media.router)
 api_router.include_router(resources.router)
 api_router.include_router(first_aid.router)
 api_router.include_router(quizzes.router)
