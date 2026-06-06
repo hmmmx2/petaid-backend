@@ -20,8 +20,29 @@ depends_on: str | tuple[str, ...] | None = None
 
 
 def upgrade() -> None:
-    op.alter_column("resources", "media_path", new_column_name="media_key")
+    # Idempotent: only rename if media_path still exists (not already renamed).
+    op.execute("""
+        DO $$
+        BEGIN
+            IF EXISTS (
+                SELECT 1 FROM information_schema.columns
+                WHERE table_name = 'resources' AND column_name = 'media_path'
+            ) THEN
+                ALTER TABLE resources RENAME COLUMN media_path TO media_key;
+            END IF;
+        END $$;
+    """)
 
 
 def downgrade() -> None:
-    op.alter_column("resources", "media_key", new_column_name="media_path")
+    op.execute("""
+        DO $$
+        BEGIN
+            IF EXISTS (
+                SELECT 1 FROM information_schema.columns
+                WHERE table_name = 'resources' AND column_name = 'media_key'
+            ) THEN
+                ALTER TABLE resources RENAME COLUMN media_key TO media_path;
+            END IF;
+        END $$;
+    """)
