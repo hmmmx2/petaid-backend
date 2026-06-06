@@ -4,7 +4,7 @@ from __future__ import annotations
 import uuid
 from datetime import datetime
 
-from pydantic import BaseModel, ConfigDict, Field, field_validator
+from pydantic import BaseModel, ConfigDict, Field, computed_field, field_validator
 
 
 class PetTypeOut(BaseModel):
@@ -77,8 +77,10 @@ class ResourceIn(BaseModel):
     title: str = Field(min_length=1, max_length=160)
     content_type: str = Field(pattern=r"^(video|pdf|images)$")
     pet_type_id: uuid.UUID
-    media_path: str = Field(min_length=1, max_length=500)
-    size_bytes: int = Field(ge=1)
+    # R2 object key returned by POST /api/v1/media/upload-url. Optional so a
+    # resource can be created without media and published later. The DB column
+    # is still named ``media_path`` and the ORM exposes it as ``media_key``.
+    media_key: str | None = Field(default=None, max_length=500)
 
 
 class ResourceOut(BaseModel):
@@ -88,8 +90,21 @@ class ResourceOut(BaseModel):
     title: str
     content_type: str
     status: str
-    media_path: str | None
+    media_key: str | None = None
     pet_type: PetTypeOut
+
+    @computed_field  # type: ignore[misc]
+    @property
+    def media_url(self) -> str | None:
+        """Public URL computed from the stored key and settings at read time."""
+        if not self.media_key:
+            return None
+        from app.core.config import get_settings
+
+        base = (get_settings().r2_public_base_url or "").rstrip("/")
+        if not base:
+            return self.media_key
+        return f"{base}/{self.media_key}"
 
 
 class FirstAidIn(BaseModel):
