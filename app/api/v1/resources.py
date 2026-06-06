@@ -8,17 +8,16 @@ from sqlalchemy import select
 from sqlalchemy.orm import selectinload
 
 from app.api.deps import CurrentAccountDep, CurrentVetDep, DbDep, require
-from app.domain.exceptions import NotFoundException
-from app.domain.media_storage import MediaStorage
+from app.core.config import get_settings
+from app.domain.exceptions import InvalidInputException, NotFoundException
 from app.domain.permissions import Permission
 from app.models.account import PetOwner
 from app.models.resource import Resource, ResourceStatus
 from app.schemas.common import ResourceIn, ResourceOut
+from app.services.media_storage import r2_storage
 
 router = APIRouter(prefix="/resources", tags=["resources"])
 
-# Stateless — safe to share.
-_media = MediaStorage()
 _resource_manage = [Depends(require(Permission.RESOURCE_MANAGE))]
 
 
@@ -44,19 +43,23 @@ async def create_resource(
 ) -> Resource:
     """Create a new resource in DRAFT status (SRS 7.3).
 
-    MediaStorage validates the file format and size before we let the row
-    hit the database; this enforces the boundary case in SRS 1.3.2 at the
-    earliest possible point in the request lifecycle.
+    If ``media_key`` is supplied and R2 is configured, the backend calls
+    ``head_object`` to confirm the browser finished its direct upload before
+    we persist the row — preventing dangling references to non-existent objects.
     """
-    descriptor = _media.accept(
-        content_type=payload.content_type,
-        media_path=payload.media_path,
-        size_bytes=payload.size_bytes,
-    )
+    if payload.media_key and get_settings().r2_enabled:
+        try:
+            await r2_storage.head_object(payload.media_key)
+        except NotFoundException:
+            raise InvalidInputException(
+                "media_key",
+                "Media not uploaded yet. Complete the direct upload to R2 first.",
+            )
+
     resource = Resource(
         title=payload.title,
-        content_type=descriptor.content_type,
-        media_path=descriptor.media_path,
+        content_type=payload.content_type,
+        media_key=payload.media_key,
         pet_type_id=payload.pet_type_id,
         author_id=vet.id,
         status=ResourceStatus.DRAFT,
