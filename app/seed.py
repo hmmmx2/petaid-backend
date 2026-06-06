@@ -137,23 +137,23 @@ async def seed() -> None:
         # --- Resources (4 published, 1 draft) -------------------------- #
         r_cpr = Resource(pet_type_id=pt_dog.id, author_id=vet.id,
                          title="Dog CPR Step-by-Step (Video)", content_type="video",
-                         media_path="https://media.petaid.app/dog-cpr.mp4",
+                         media_key="https://media.petaid.app/dog-cpr.mp4",
                          status=ResourceStatus.PUBLISHED)
         r_poison = Resource(pet_type_id=pt_cat.id, author_id=vet.id,
                             title="Cat Poisoning Reference Guide", content_type="pdf",
-                            media_path="https://media.petaid.app/cat-poisoning.pdf",
+                            media_key="https://media.petaid.app/cat-poisoning.pdf",
                             status=ResourceStatus.PUBLISHED)
         r_wound = Resource(pet_type_id=pt_rabbit.id, author_id=vet.id,
                            title="Rabbit Wound Care Photo Set", content_type="images",
-                           media_path="https://media.petaid.app/rabbit-wound.png",
+                           media_key="https://media.petaid.app/rabbit-wound.png",
                            status=ResourceStatus.PUBLISHED)
         r_heat = Resource(pet_type_id=pt_dog.id, author_id=vet.id,
                           title="Heat-Stroke Triage Reference", content_type="pdf",
-                          media_path="https://media.petaid.app/heatstroke.pdf",
+                          media_key="https://media.petaid.app/heatstroke.pdf",
                           status=ResourceStatus.PUBLISHED)
         r_bee = Resource(pet_type_id=pt_dog.id, author_id=vet.id,
                          title="Bee-Sting Response Draft", content_type="pdf",
-                         media_path="https://media.petaid.app/bee-sting.pdf",
+                         media_key="https://media.petaid.app/bee-sting.pdf",
                          status=ResourceStatus.DRAFT)
         db.add_all([r_cpr, r_poison, r_wound, r_heat, r_bee])
         await db.flush()

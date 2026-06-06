@@ -4,13 +4,12 @@ Revision ID: a1b2c3d4e5f6
 Revises:
 Create Date: 2026-06-06
 
-The column is renamed from ``media_path`` (a loose URL placeholder) to
-``media_key`` (a typed R2 object key) to reflect the new direct-upload
-architecture.  All existing rows are preserved — the column value is carried
-over as-is; any non-null legacy values will simply return themselves as the
-fallback ``media_url`` until overwritten via the new upload flow.
+Column kept as "media_path" in the DB; Python code accesses it as "media_key"
+via a SQLAlchemy attribute alias.  The rename requires ACCESS EXCLUSIVE lock
+which deadlocks with Railway blue-green deploys (old container holds DB
+connections until the new one passes health check).
 """
-from alembic import op
+from alembic import op  # noqa: F401
 
 # revision identifiers, used by Alembic.
 revision: str = "a1b2c3d4e5f6"
@@ -20,29 +19,9 @@ depends_on: str | tuple[str, ...] | None = None
 
 
 def upgrade() -> None:
-    # Idempotent: only rename if media_path still exists (not already renamed).
-    op.execute("""
-        DO $$
-        BEGIN
-            IF EXISTS (
-                SELECT 1 FROM information_schema.columns
-                WHERE table_name = 'resources' AND column_name = 'media_path'
-            ) THEN
-                ALTER TABLE resources RENAME COLUMN media_path TO media_key;
-            END IF;
-        END $$;
-    """)
+    # No-op: column stays "media_path" in DB; ORM exposes it as media_key.
+    pass
 
 
 def downgrade() -> None:
-    op.execute("""
-        DO $$
-        BEGIN
-            IF EXISTS (
-                SELECT 1 FROM information_schema.columns
-                WHERE table_name = 'resources' AND column_name = 'media_key'
-            ) THEN
-                ALTER TABLE resources RENAME COLUMN media_key TO media_path;
-            END IF;
-        END $$;
-    """)
+    pass
