@@ -5,8 +5,9 @@ from fastapi import APIRouter, Depends
 from pydantic import BaseModel, Field
 
 from app.api.deps import CurrentVetDep, require
+from app.core.config import get_settings
 from app.core.rate_limit import enforce
-from app.domain.exceptions import InvalidInputException
+from app.domain.exceptions import InvalidInputException, ServiceUnavailableException
 from app.domain.permissions import Permission
 from app.services.media_storage import UploadUrlResult, r2_storage
 
@@ -57,6 +58,11 @@ async def request_upload_url(
     Permissions: Veterinary Experts only (RESOURCE_MANAGE).
     Rate limit: 20 requests per hour per vet.
     """
+    if not get_settings().r2_enabled:
+        raise ServiceUnavailableException(
+            "Media uploads are not configured. Please contact the administrator."
+        )
+
     enforce("media_upload", str(vet.id), max_requests=20, window_seconds=3600)
 
     ct = payload.content_type.lower().strip()

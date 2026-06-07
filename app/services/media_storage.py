@@ -5,12 +5,16 @@ import re
 import uuid
 from contextlib import asynccontextmanager
 
-from botocore.config import Config
-from botocore.exceptions import ClientError
 from typing_extensions import TypedDict
 
 from app.core.config import get_settings
 from app.domain.exceptions import NotFoundException
+
+# NOTE: botocore and aioboto3 are imported lazily inside the methods that use
+# them (not at module top). Importing this module must stay free of the R2
+# stack so the FastAPI app can boot even when that stack is missing or broken
+# in the deploy container. The health check only passes if app import never
+# depends on an optional integration.
 
 _SLUG_RE = re.compile(r"[^\w.\-]")
 
@@ -46,6 +50,8 @@ class R2MediaStorage:
 
     @asynccontextmanager
     async def _client(self):
+        from botocore.config import Config
+
         settings = get_settings()
         async with self._get_session().client(
             "s3",
@@ -84,6 +90,8 @@ class R2MediaStorage:
         )
 
     async def head_object(self, key: str) -> HeadResult:
+        from botocore.exceptions import ClientError
+
         settings = get_settings()
         async with self._client() as client:
             try:

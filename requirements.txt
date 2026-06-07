@@ -13,4 +13,10 @@ bcrypt<4.0
 python-multipart>=0.0.9
 email-validator>=2.1.1
 httpx>=0.27.0
-aioboto3>=12.0.0
+# R2 / S3 object storage. Pinned to a known-compatible closure so the Railway
+# python:3.11-slim build resolves the same versions every time (aiobotocore has
+# strict transitive pins on botocore). These imports are loaded lazily by
+# app/services/media_storage.py, so a problem here can never block app startup.
+aioboto3==13.2.0
+aiobotocore==2.13.1
+botocore==1.34.131

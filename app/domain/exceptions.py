@@ -124,3 +124,17 @@ class RateLimitedException(PetAidError):
             or f"Too many requests. Please slow down and try again in {retry_after_seconds}s."
         )
         self.retry_after_seconds = retry_after_seconds
+
+
+class ServiceUnavailableException(PetAidError):
+    """Raised when an optional integration is not configured or is offline.
+
+    Used for example by the media upload endpoint when Cloudflare R2 credentials
+    are absent, so the caller receives a clean 503 rather than a raw 500.
+    """
+
+    code = "service_unavailable"
+    http_status = 503
+
+    def __init__(self, message: str | None = None) -> None:
+        super().__init__(message or "This service is temporarily unavailable.")

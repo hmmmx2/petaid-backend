@@ -22,7 +22,8 @@ RUN useradd --create-home --uid 1000 app \
     && chown -R app:app /app
 USER app
 
-EXPOSE 8000
+EXPOSE 8080
 
-# Railway sets $PORT. Default to 8000 for local docker runs.
-CMD ["sh", "-c", "alembic upgrade head && uvicorn app.main:app --host 0.0.0.0 --port ${PORT:-8000}"]
+# Railway sets $PORT (8080) and overrides this CMD via railway.toml startCommand.
+# Default to 8080 for local docker runs so the exposed port matches.
+CMD ["sh", "-c", "uvicorn app.main:app --host 0.0.0.0 --port ${PORT:-8080}"]
