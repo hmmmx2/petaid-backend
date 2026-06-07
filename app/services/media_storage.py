@@ -72,15 +72,22 @@ class R2MediaStorage:
             yield client
 
     async def configure_cors(self) -> None:
-        """Apply the required CORS policy to the R2 bucket.
+        """Best-effort attempt to set the R2 bucket CORS policy at startup.
 
-        Called once at application startup so that browser clients on the
-        Vercel frontend can PUT directly to presigned URLs without a CORS
-        preflight rejection.  The call is idempotent — repeated invocations
-        simply overwrite the policy with the same values.
+        IMPORTANT: this is very likely a no-op against Cloudflare R2. R2's
+        bucket CORS is managed through the Cloudflare API (which needs a
+        Cloudflare API token), not the S3 ``put_bucket_cors`` action with the
+        S3 HMAC credentials we hold here — so this call typically does nothing
+        even when it appears to succeed. Do NOT read the log line below as
+        proof that browser CORS is configured.
 
-        Failures are logged as warnings but do not prevent the app from
-        starting; the existing uploads API still works for same-origin callers.
+        Browser CORS for the SPA is actually handled on the frontend by the
+        Content-Security-Policy in ``next.config.js`` (which allow-lists the
+        R2 upload/CDN domains). Presigned PUT uploads work regardless because
+        they don't trigger a CORS preflight the bucket would need to answer.
+
+        Kept as a harmless best-effort call (it still works on a real
+        S3-compatible endpoint). Failures are swallowed and never block startup.
         """
         settings = get_settings()
         if not settings.r2_enabled:
@@ -105,9 +112,10 @@ class R2MediaStorage:
                     CORSConfiguration=cors_config,
                 )
             logger.info(
-                "R2 CORS configured for bucket %s (origins: %s)",
+                "R2 put_bucket_cors attempted for bucket %s — note this is "
+                "likely a no-op on R2 (browser CORS is enforced by the frontend "
+                "CSP, not this call)",
                 settings.r2_bucket_name,
-                _CORS_ORIGINS,
             )
         except Exception as exc:  # noqa: BLE001
             logger.warning("R2 CORS setup failed (%s): %s", type(exc).__name__, exc)
