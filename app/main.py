@@ -37,6 +37,14 @@ async def lifespan(_: FastAPI):
     # very first request rather than being created on demand.
     get_app_controller()
 
+    # Bring any drifted database back in line with the current models using
+    # additive-only DDL (ADD COLUMN IF MISSING + backfill). create_all only
+    # creates missing tables, never missing columns, so without this an
+    # evolved model SELECTs columns the live DB lacks and the endpoint 500s.
+    # Idempotent and failure-tolerant: never blocks startup or the healthcheck.
+    from app.core.schema_reconcile import reconcile_schema
+    await reconcile_schema()
+
     # Configure R2 bucket CORS once at startup so browsers on the Vercel
     # frontend can PUT presigned upload URLs without preflight rejections.
     if settings.r2_enabled:
