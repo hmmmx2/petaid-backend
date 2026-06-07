@@ -39,9 +39,9 @@ class Resource(UUIDPkMixin, TimestampMixin, Base):
 
     title: Mapped[str] = mapped_column(String(160), nullable=False)
     content_type: Mapped[str] = mapped_column(String(20), nullable=False)  # video, pdf, images
-    # DB column is still named "media_path" (avoids DDL lock during blue-green
-    # deploy); Python code accesses it as `media_key` via this attribute alias.
-    media_key: Mapped[str | None] = mapped_column("media_path", String(500), nullable=True)
+    # R2 object key. The DB column is named ``media_key`` (its name in the
+    # production database, created in the 05db3a8 era). No DDL is needed.
+    media_key: Mapped[str | None] = mapped_column(String(500), nullable=True)
     status: Mapped[ResourceStatus] = mapped_column(
         Enum(ResourceStatus, native_enum=False),
         nullable=False,
