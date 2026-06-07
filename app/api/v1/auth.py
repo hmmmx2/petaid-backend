@@ -294,6 +294,32 @@ async def email_test(payload: EmailTestRequest, vet: CurrentVetDep) -> dict[str,
 
 
 # --- Account administration (Veterinary Expert = admin role) -------------- #
+@router.get("/accounts")
+async def list_accounts(vet: CurrentVetDep, db: DbDep) -> list[dict[str, object]]:
+    """List Pet Owner accounts (admin tool, Veterinary Expert only).
+
+    Returns only non-sensitive profile fields — emails/credentials are never
+    exposed here (they stay behind AuthManager). Enough to identify and manage
+    accounts (e.g. remove abandoned/unverified ones).
+    """
+    from sqlalchemy import select
+
+    rows = await db.scalars(
+        select(Account)
+        .where(Account.role == "pet_owner")
+        .order_by(Account.created_at.desc())
+    )
+    return [
+        {
+            "id": str(a.id),
+            "full_name": a.full_name,
+            "email_verified": a.email_verified,
+            "created_at": a.created_at.isoformat() if a.created_at else None,
+        }
+        for a in rows
+    ]
+
+
 @router.delete("/accounts/{account_id}", status_code=status.HTTP_204_NO_CONTENT)
 async def delete_account(
     account_id: uuid.UUID, vet: CurrentVetDep, db: DbDep
