@@ -82,3 +82,9 @@ class MessageResponse(BaseModel):
 
     message: str
     reset_code: str | None = None
+
+
+class EmailTestRequest(BaseModel):
+    """Target address for the vet-only email deliverability test."""
+
+    to: EmailStr

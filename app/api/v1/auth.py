@@ -18,8 +18,13 @@ from app.core.security import create_token, decode_token
 from app.domain.permissions import Permission, permissions_for
 from app.domain.app_controller import get_app_controller
 from app.models.account import Account
-from app.services.email import send_password_reset_code, send_verification_code
+from app.services.email import (
+    send_password_reset_code,
+    send_test_email,
+    send_verification_code,
+)
 from app.schemas.auth import (
+    EmailTestRequest,
     ChangePasswordRequest,
     ForgotPasswordRequest,
     LoginRequest,
@@ -246,3 +251,37 @@ async def refresh(payload: RefreshRequest, db: DbDep) -> TokenPair:
     if account is None or not account.is_active:
         raise HTTPException(status.HTTP_401_UNAUTHORIZED, detail="Account not found")
     return _issue_tokens(account)
+
+
+# --- Email diagnostics (Veterinary Expert = admin role) ------------------- #
+@router.get("/email-status")
+async def email_status(vet: CurrentVetDep) -> dict[str, object]:
+    """Report transactional-email configuration (no secrets).
+
+    Vet-only. Lets an operator confirm whether SMTP is wired without shell
+    access to the deploy. Passwords/keys are reported only as booleans.
+    """
+    s = get_settings()
+    return {
+        "email_enabled": s.email_enabled,
+        "is_production": s.is_production,
+        "smtp_host": s.smtp_host,
+        "smtp_port": s.smtp_port,
+        "smtp_from": s.smtp_from,
+        "smtp_user_set": bool(s.smtp_user),
+        "smtp_password_set": bool(s.smtp_password),
+    }
+
+
+@router.post(
+    "/email-test",
+    dependencies=[Depends(rate_limit_ip("auth_email_test", max_requests=10, window_seconds=900))],
+)
+async def email_test(payload: EmailTestRequest, vet: CurrentVetDep) -> dict[str, object]:
+    """Send a diagnostic test email and return the real SMTP outcome.
+
+    Vet-only and rate-limited. Surfaces the actual error (which the
+    register/reset paths deliberately swallow) so misconfiguration is visible.
+    """
+    ok, error = await send_test_email(str(payload.to))
+    return {"sent": ok, "error": error, "to": str(payload.to)}

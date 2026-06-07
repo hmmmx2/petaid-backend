@@ -7,9 +7,14 @@ loop. When SMTP is not configured the senders are no-ops and the caller falls
 back to the dev behaviour (surfacing the code in the API response outside
 production).
 
-All failures are logged and swallowed: a mail outage must never break the
-register / password-reset flow, and we must never disclose whether an email
-maps to an account (account-enumeration safety).
+Reliability notes:
+* Every message carries ``Date`` and ``Message-ID`` headers. Mail without them
+  is widely treated as malformed — many relays reject it outright and spam
+  filters silently drop it, which is a common cause of "the API says 201 but no
+  email arrives".
+* All failures are captured and returned to the caller (never raised through
+  the request path) so a mail outage can't break register / password-reset and
+  can't disclose whether an email maps to an account (enumeration safety).
 """
 from __future__ import annotations
 
@@ -18,10 +23,21 @@ import logging
 import smtplib
 import ssl
 from email.message import EmailMessage
+from email.utils import formatdate, make_msgid
 
 from app.core.config import get_settings
 
 logger = logging.getLogger("petaid.email")
+
+
+def _from_domain(sender: str) -> str:
+    """Best-effort domain for the Message-ID, derived from the From address."""
+    if "@" in sender:
+        # Handles both "Name <a@b.com>" and "a@b.com".
+        addr = sender.split("<")[-1].rstrip(">")
+        if "@" in addr:
+            return addr.split("@")[-1].strip()
+    return "petaid.local"
 
 
 def _send_sync(
@@ -39,18 +55,21 @@ def _send_sync(
     msg["From"] = sender
     msg["To"] = to
     msg["Subject"] = subject
+    # Required, deliverability-critical headers (see module docstring).
+    msg["Date"] = formatdate(localtime=False)
+    msg["Message-ID"] = make_msgid(domain=_from_domain(sender))
     msg.set_content(body)
 
     if port == 465:
         # Implicit TLS.
         context = ssl.create_default_context()
-        with smtplib.SMTP_SSL(host, port, timeout=15, context=context) as server:
+        with smtplib.SMTP_SSL(host, port, timeout=20, context=context) as server:
             if user:
                 server.login(user, password or "")
             server.send_message(msg)
     else:
         # STARTTLS (port 587 and friends).
-        with smtplib.SMTP(host, port, timeout=15) as server:
+        with smtplib.SMTP(host, port, timeout=20) as server:
             server.ehlo()
             try:
                 server.starttls(context=ssl.create_default_context())
@@ -64,11 +83,13 @@ def _send_sync(
             server.send_message(msg)
 
 
-async def _send(to: str, subject: str, body: str) -> bool:
+async def _send(to: str, subject: str, body: str) -> tuple[bool, str | None]:
+    """Send one message. Returns ``(ok, error_detail)`` — never raises."""
     settings = get_settings()
     if not settings.email_enabled:
-        logger.info("Email not configured — skipping message to %s (%s)", to, subject)
-        return False
+        msg = "SMTP not configured (set SMTP_HOST and SMTP_FROM/SMTP_USER)"
+        logger.info("Email skipped — %s — to %s (%s)", msg, to, subject)
+        return False, msg
     try:
         await asyncio.to_thread(
             _send_sync,
@@ -82,10 +103,11 @@ async def _send(to: str, subject: str, body: str) -> bool:
             body=body,
         )
         logger.info("Sent email to %s (%s)", to, subject)
-        return True
+        return True, None
     except Exception as exc:  # noqa: BLE001
-        logger.warning("Email send failed (%s): %s", type(exc).__name__, exc)
-        return False
+        detail = f"{type(exc).__name__}: {exc}"
+        logger.warning("Email send failed to %s (%s)", to, detail)
+        return False, detail
 
 
 async def send_verification_code(to: str, code: str) -> bool:
@@ -97,7 +119,8 @@ async def send_verification_code(to: str, code: str) -> bool:
         "The code expires in 15 minutes.\n\n"
         "If you didn't sign up for PetAid, you can safely ignore this email."
     )
-    return await _send(to, "Your PetAid verification code", body)
+    ok, _ = await _send(to, "Your PetAid verification code", body)
+    return ok
 
 
 async def send_password_reset_code(to: str, code: str) -> bool:
@@ -110,4 +133,18 @@ async def send_password_reset_code(to: str, code: str) -> bool:
         "If you didn't request this, you can safely ignore this email — "
         "your password will not change."
     )
-    return await _send(to, "Your PetAid password reset code", body)
+    ok, _ = await _send(to, "Your PetAid password reset code", body)
+    return ok
+
+
+async def send_test_email(to: str) -> tuple[bool, str | None]:
+    """Send a diagnostic test message. Returns ``(ok, error_detail)``.
+
+    Used by the vet-only email diagnostics endpoint to surface the real SMTP
+    error (which the register/reset paths intentionally swallow).
+    """
+    body = (
+        "This is a PetAid email deliverability test.\n\n"
+        "If you received this, transactional email is working correctly."
+    )
+    return await _send(to, "PetAid email test", body)
