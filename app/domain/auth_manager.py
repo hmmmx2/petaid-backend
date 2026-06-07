@@ -167,10 +167,12 @@ class AuthManager:
         now = datetime.now(timezone.utc)
         last = self._last_verification_sent.get(email)
         if last is not None and (now - last).total_seconds() < RESEND_COOLDOWN_SECONDS:
-            remaining = int(RESEND_COOLDOWN_SECONDS - (now - last).total_seconds())
-            raise InvalidInputException(
-                "email", f"Please wait {max(remaining, 1)}s before requesting another code."
-            )
+            # Within the cooldown: silently no-op and return the same generic
+            # result as an unknown email. Raising a "please wait Ns" error here
+            # would only ever happen for a *real* unverified account, which
+            # leaks account existence (enumeration). The client enforces the
+            # visible 30s countdown; this is just the server-side backstop.
+            return None
 
         code = f"{secrets.randbelow(900000) + 100000}"
         self._pending_verifications[email] = (code, now + timedelta(seconds=VERIFICATION_TTL_SECONDS))
