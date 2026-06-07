@@ -1,6 +1,7 @@
 """Resource endpoints — content management by Veterinary Experts."""
 from __future__ import annotations
 
+import logging
 import uuid
 
 from fastapi import APIRouter, Depends, status
@@ -17,6 +18,8 @@ from app.schemas.common import ResourceIn, ResourceOut
 from app.services.media_storage import r2_storage
 
 router = APIRouter(prefix="/resources", tags=["resources"])
+
+logger = logging.getLogger("petaid.resources")
 
 _resource_manage = [Depends(require(Permission.RESOURCE_MANAGE))]
 
@@ -81,3 +84,32 @@ async def publish_resource(
     await db.commit()
     await db.refresh(resource, attribute_names=["pet_type"])
     return resource
+
+
+@router.delete("/{resource_id}", status_code=status.HTTP_204_NO_CONTENT, dependencies=_resource_manage)
+async def delete_resource(
+    resource_id: uuid.UUID, vet: CurrentVetDep, db: DbDep
+) -> None:
+    """Delete a resource and best-effort remove its backing R2 object (SRS 7.3).
+
+    Vet-only (RESOURCE_MANAGE). Linked quizzes, feedback and first-aid links
+    are removed by ``ON DELETE CASCADE`` at the database level. The DB row is
+    deleted first; R2 object cleanup is best-effort afterwards so a failure to
+    reach R2 can never leave a dangling database row (an orphaned object is
+    harmless and can be swept later).
+    """
+    resource = await db.get(Resource, resource_id)
+    if resource is None:
+        raise NotFoundException("Resource")
+    media_key = resource.media_key
+    await db.delete(resource)
+    await db.commit()
+    if media_key and get_settings().r2_enabled:
+        try:
+            await r2_storage.delete_object(media_key)
+        except Exception as exc:  # noqa: BLE001
+            logger.warning(
+                "R2 delete_object failed for %s (%s) — row already removed",
+                media_key,
+                type(exc).__name__,
+            )
