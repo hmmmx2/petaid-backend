@@ -43,6 +43,23 @@ class Settings(BaseSettings):
             and self.r2_bucket_name
         )
 
+    # --- Transactional email (SMTP) -------------------------------------- #
+    # Optional. When unset, the app still runs and code delivery falls back to
+    # the dev behaviour (the code is surfaced in the API response outside
+    # production). Works with any SMTP provider (SendGrid, Resend, Mailgun,
+    # Amazon SES, Gmail, …). Port 465 uses implicit TLS; any other port uses
+    # STARTTLS.
+    smtp_host: str | None = Field(default=None)
+    smtp_port: int = Field(default=587)
+    smtp_user: str | None = Field(default=None)
+    smtp_password: str | None = Field(default=None)
+    smtp_from: str | None = Field(default=None)  # e.g. "PetAid <noreply@yourdomain>"
+
+    @property
+    def email_enabled(self) -> bool:
+        """True when SMTP is configured well enough to send mail."""
+        return bool(self.smtp_host and (self.smtp_from or self.smtp_user))
+
     # --- Object storage (Supabase Storage) ------------------------------ #
     supabase_url: str = Field(default="")
     supabase_service_key: str = Field(default="")

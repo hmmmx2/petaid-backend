@@ -18,6 +18,7 @@ from app.core.security import create_token, decode_token
 from app.domain.permissions import Permission, permissions_for
 from app.domain.app_controller import get_app_controller
 from app.models.account import Account
+from app.services.email import send_password_reset_code, send_verification_code
 from app.schemas.auth import (
     ChangePasswordRequest,
     ForgotPasswordRequest,
@@ -65,6 +66,9 @@ async def register(payload: RegisterRequest, db: DbDep) -> RegisterResponse:
         email=payload.email,
         password=payload.password,
     )
+    # Deliver the code by email when SMTP is configured (best effort — a mail
+    # failure must not break the flow; the user can resend).
+    await send_verification_code(payload.email.lower(), code)
     # SECURITY: never return the verification code in production — it would
     # let a client verify an email they don't control. In production the code
     # is delivered out-of-band (email). Dev surfaces it because there's no
@@ -89,6 +93,9 @@ async def resend_verification(
     """
     controller = get_app_controller()
     code = await controller.auth_manager.resend_verification(db, email=payload.email)
+    # Only a real unverified account yields a code; send it by email if so.
+    if code is not None:
+        await send_verification_code(payload.email.lower(), code)
     exposed_code = None if get_settings().is_production else code
     return RegisterResponse(
         email=payload.email.lower(),
@@ -142,6 +149,9 @@ async def forgot_password(payload: ForgotPasswordRequest, db: DbDep) -> MessageR
     """
     controller = get_app_controller()
     code = await controller.auth_manager.request_password_reset(db, email=payload.email)
+    # Only a verified account yields a code; send it by email if so.
+    if code is not None:
+        await send_password_reset_code(payload.email.lower(), code)
     exposed_code = None if get_settings().is_production else code
     return MessageResponse(
         message="If the email matches a verified account, a reset code was sent.",
