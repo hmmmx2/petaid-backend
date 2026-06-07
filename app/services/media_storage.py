@@ -1,6 +1,7 @@
 """Cloudflare R2 media storage service (S3-compatible API via aioboto3)."""
 from __future__ import annotations
 
+import logging
 import re
 import uuid
 from contextlib import asynccontextmanager
@@ -16,7 +17,14 @@ from app.domain.exceptions import NotFoundException
 # in the deploy container. The health check only passes if app import never
 # depends on an optional integration.
 
+logger = logging.getLogger("petaid.r2")
+
 _SLUG_RE = re.compile(r"[^\w.\-]")
+
+# Origins permitted to PUT directly to the R2 bucket from the browser.
+_CORS_ORIGINS = [
+    "https://petaid-frontend.vercel.app",
+]
 
 
 def _slugify(name: str) -> str:
@@ -62,6 +70,47 @@ class R2MediaStorage:
             config=Config(signature_version="s3v4"),
         ) as client:
             yield client
+
+    async def configure_cors(self) -> None:
+        """Apply the required CORS policy to the R2 bucket.
+
+        Called once at application startup so that browser clients on the
+        Vercel frontend can PUT directly to presigned URLs without a CORS
+        preflight rejection.  The call is idempotent — repeated invocations
+        simply overwrite the policy with the same values.
+
+        Failures are logged as warnings but do not prevent the app from
+        starting; the existing uploads API still works for same-origin callers.
+        """
+        settings = get_settings()
+        if not settings.r2_enabled:
+            logger.info("R2 not configured — skipping CORS setup")
+            return
+
+        cors_config = {
+            "CORSRules": [
+                {
+                    "AllowedOrigins": _CORS_ORIGINS,
+                    "AllowedMethods": ["PUT", "GET", "HEAD"],
+                    "AllowedHeaders": ["Content-Type", "*"],
+                    "ExposeHeaders": ["ETag"],
+                    "MaxAgeSeconds": 3600,
+                }
+            ]
+        }
+        try:
+            async with self._client() as client:
+                await client.put_bucket_cors(
+                    Bucket=settings.r2_bucket_name,
+                    CORSConfiguration=cors_config,
+                )
+            logger.info(
+                "R2 CORS configured for bucket %s (origins: %s)",
+                settings.r2_bucket_name,
+                _CORS_ORIGINS,
+            )
+        except Exception as exc:  # noqa: BLE001
+            logger.warning("R2 CORS setup failed (%s): %s", type(exc).__name__, exc)
 
     async def generate_upload_url(
         self,

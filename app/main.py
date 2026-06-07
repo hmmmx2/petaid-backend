@@ -36,6 +36,13 @@ async def lifespan(_: FastAPI):
     # Eagerly bootstrap the singleton so the EventBus is shared with the
     # very first request rather than being created on demand.
     get_app_controller()
+
+    # Configure R2 bucket CORS once at startup so browsers on the Vercel
+    # frontend can PUT presigned upload URLs without preflight rejections.
+    if settings.r2_enabled:
+        from app.services.media_storage import r2_storage
+        await r2_storage.configure_cors()
+
     try:
         yield
     finally:
