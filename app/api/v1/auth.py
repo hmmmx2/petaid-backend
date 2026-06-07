@@ -10,11 +10,17 @@ from __future__ import annotations
 import uuid
 
 from fastapi import APIRouter, Depends, HTTPException, status
+from sqlalchemy import delete
 
 from app.api.deps import CurrentAccountDep, CurrentVetDep, DbDep, require
 from app.core.config import get_settings
 from app.core.rate_limit import rate_limit_ip
 from app.core.security import create_token, decode_token
+from app.domain.exceptions import (
+    InvalidInputException,
+    NotAuthorisedException,
+    NotFoundException,
+)
 from app.domain.permissions import Permission, permissions_for
 from app.domain.app_controller import get_app_controller
 from app.models.account import Account
@@ -285,3 +291,33 @@ async def email_test(payload: EmailTestRequest, vet: CurrentVetDep) -> dict[str,
     """
     ok, error = await send_test_email(str(payload.to))
     return {"sent": ok, "error": error, "to": str(payload.to)}
+
+
+# --- Account administration (Veterinary Expert = admin role) -------------- #
+@router.delete("/accounts/{account_id}", status_code=status.HTTP_204_NO_CONTENT)
+async def delete_account(
+    account_id: uuid.UUID, vet: CurrentVetDep, db: DbDep
+) -> None:
+    """Delete a Pet Owner account (admin tool, Veterinary Expert only).
+
+    Restricted to ``pet_owner`` accounts on purpose: Veterinary Expert accounts
+    are provisioned by the Veterinary Association and may author resources and
+    guidance (RESTRICT foreign keys), so removing them here is disallowed. A vet
+    also cannot delete their own account through this endpoint.
+
+    The account's owned rows — credentials, pets, donations, feedback, chats and
+    inquiries — are removed by ``ON DELETE CASCADE`` at the database level; the
+    Core ``DELETE`` issues a single statement and lets the DB cascade run.
+    """
+    if account_id == vet.id:
+        raise InvalidInputException("account_id", "You cannot delete your own account.")
+    account = await db.get(Account, account_id)
+    if account is None:
+        raise NotFoundException("Account")
+    if account.role != "pet_owner":
+        raise NotAuthorisedException(
+            "Only Pet Owner accounts can be deleted here. Veterinary Expert "
+            "accounts are managed by the Veterinary Association."
+        )
+    await db.execute(delete(Account).where(Account.id == account_id))
+    await db.commit()
